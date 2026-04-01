@@ -115,7 +115,7 @@ async function sendEmails({ id, name, email, service, concept, neighborhood, pho
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'PresageIQ <onboarding@resend.dev>',
+      from: 'PresageIQ <noreply@presageiq.com>',
       to: ['walley.research@gmail.com'],
       subject: `New ${serviceLabel} Request — ${name} (#${id})`,
       html: `
@@ -136,9 +136,7 @@ async function sendEmails({ id, name, email, service, concept, neighborhood, pho
     }),
   });
 
-  // Client confirmation — requires a verified sending domain.
-  // TODO: replace onboarding@resend.dev with your own domain once verified in Resend.
-  // Until then this sends from resend.dev which only delivers to your own Resend account email.
+  // Client confirmation
   const isAudit = service === 'audit';
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -147,7 +145,7 @@ async function sendEmails({ id, name, email, service, concept, neighborhood, pho
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'Towns & Walley Intelligence <onboarding@resend.dev>',
+      from: 'Towns & Walley Intelligence <noreply@presageiq.com>',
       to: [email],
       subject: `We received your ${isAudit ? 'Presage Audit' : 'Presage Consult'} request`,
       html: `
