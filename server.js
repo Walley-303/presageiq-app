@@ -34,6 +34,9 @@ async function initDb() {
       status      TEXT DEFAULT 'pending'
     )
   `);
+  // Add columns introduced after initial deploy (safe to run repeatedly)
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS bizname TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS biztype TEXT`);
   console.log('Database ready.');
 }
 
@@ -86,7 +89,7 @@ app.post('/api/chat', async (req, res) => {
 
 // ── POST /api/contact ─ save client + send emails ────────────────────────────
 app.post('/api/contact', async (req, res) => {
-  const { name, email, service, concept, neighborhood, phone, notes } = req.body;
+  const { name, email, service, concept, neighborhood, phone, notes, bizname, biztype } = req.body;
 
   if (!name || !email || !service || !concept) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -95,10 +98,10 @@ app.post('/api/contact', async (req, res) => {
   try {
     // Save to database
     const result = await pool.query(
-      `INSERT INTO clients (name, email, service, concept, neighborhood, phone, notes, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+      `INSERT INTO clients (name, email, service, concept, neighborhood, phone, notes, bizname, biztype, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
        RETURNING id, created_at`,
-      [name, email, service, concept, neighborhood || null, phone || null, notes || null]
+      [name, email, service, concept, neighborhood || null, phone || null, notes || null, bizname || null, biztype || null]
     );
     const client = result.rows[0];
 

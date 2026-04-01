@@ -347,6 +347,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <button class="run-btn" id="menu-run-btn" onclick="analyzeMenu()">◎ Run Menu Analysis</button>
           <button class="run-btn teal" id="menu-reddit-btn" onclick="scanMenuReddit()">◎ Scan Community for Item Signals</button>
+          <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('menu','N/A')">N/A — Not Applicable</button>
+          <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('menu','TBD')">TBD — Return Later</button>
         </div>
 
         <div class="ai-result" id="menu-result">
@@ -379,6 +381,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <button class="run-btn" id="review-run-btn" onclick="analyzeReviews()">◎ Extract Review Signals</button>
           <button class="run-btn teal" id="review-reddit-btn" onclick="scanRedditReviews()">◎ Scan Reddit for Mentions</button>
+          <button class="run-btn" style="background:rgba(200,150,62,.08);border-color:rgba(200,150,62,.25);color:var(--gold);" onclick="generateReviewResearchBrief()">◎ Generate Research Brief</button>
+          <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('reviews','N/A')">N/A</button>
         </div>
 
         <div class="ai-result" id="review-result">
@@ -416,7 +420,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           </div>
         </div>
 
-        <button class="run-btn" id="inv-run-btn" onclick="analyzeInventory()">◎ Analyze Supply Chain</button>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="run-btn" id="inv-run-btn" onclick="analyzeInventory()">◎ Analyze Supply Chain</button>
+      <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('inventory','N/A')">N/A — Not Applicable</button>
+      <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('inventory','TBD')">TBD — Return Later</button>
+    </div>
 
         <div class="ai-result" id="inv-result">
           <div class="ai-result-header"><span class="ai-result-label">◎ Supply Chain Analysis — PresageIQ</span></div>
@@ -448,6 +456,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <button class="run-btn" id="comp-run-btn" onclick="analyzeCompetitors()">◎ Run Competitor Analysis</button>
           <button class="run-btn teal" id="comp-reddit-btn" onclick="scanCompetitorReddit()">◎ Scan Reddit for Competitor Mentions</button>
+          <button class="run-btn" style="background:rgba(200,150,62,.08);border-color:rgba(200,150,62,.25);color:var(--gold);" onclick="aiIdentifyCompetitors()">◎ AI Identify Competitors</button>
+          <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('competitors','N/A')">N/A</button>
         </div>
 
         <div class="ai-result" id="comp-result">
@@ -1453,14 +1463,24 @@ function loadClientIntoSession(id) {
 
   // Populate audit setup fields
   const map = {
-    's-biz': cl.name,
+    's-client': cl.name,
+    's-biz': cl.bizname || '',
     's-nbhd': cl.neighborhood || '',
-    's-concept': cl.concept || '',
+    's-challenge': cl.concept || '',
     's-notes': cl.notes || ''
   };
   for (const [fieldId, value] of Object.entries(map)) {
     const el = document.getElementById(fieldId);
     if (el) el.value = value;
+  }
+  // Business type
+  if (cl.biztype) {
+    const typeEl = document.getElementById('s-type');
+    if (typeEl) {
+      for (const opt of typeEl.options) {
+        if (opt.value === cl.biztype || opt.text === cl.biztype) { typeEl.value = opt.value; break; }
+      }
+    }
   }
 
   // Switch to appropriate mode and show setup panel
@@ -1489,6 +1509,109 @@ function loadClientIntoSession(id) {
   // Show confirmation
   const pill = document.querySelector('.client-pill');
   if (pill) pill.textContent = cl.name + ' · ' + (cl.service === 'consult' ? 'Consult' : 'Audit');
+}
+
+// =============================================
+// SKIP MODULE (N/A / TBD)
+// =============================================
+function skipModule(id, reason) {
+  const resultBodyMap = { menu:'menu-result-body', reviews:'review-result-body', inventory:'inv-result-body', competitors:'comp-result-body' };
+  const resultMap = { menu:'menu-result', reviews:'review-result', inventory:'inv-result', competitors:'comp-result' };
+  const nextPanel = { menu:'reviews', reviews:'inventory', inventory:'competitors', competitors:'brief' };
+  const bodyEl = document.getElementById(resultBodyMap[id]);
+  const resultEl = document.getElementById(resultMap[id]);
+  if (bodyEl) {
+    const label = reason === 'N/A' ? 'N/A — Not applicable for this business type.' : 'TBD — To be completed in a follow-up session.';
+    const color = reason === 'N/A' ? 'var(--text3)' : 'var(--warn)';
+    bodyEl.innerHTML = '<span style="font-size:11px;color:' + color + ';font-style:italic;">' + label + '</span>';
+    if (resultEl) resultEl.classList.add('visible');
+  }
+  markDone(id);
+  if (nextPanel[id]) showPanel(nextPanel[id]);
+}
+
+// =============================================
+// REVIEW SIGNALS — AI RESEARCH BRIEF
+// =============================================
+async function generateReviewResearchBrief() {
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const biz = document.getElementById('s-biz').value || 'this business';
+  const type = document.getElementById('s-type').value || 'business';
+  const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:700,
+      system:'You are PresageIQ preparing a pre-session research brief for a business analyst. Generate specific, actionable search instructions and keyword lists the analyst can use right now. Be precise — name exact search strings, platforms, and what signals to flag.',
+      messages:[{role:'user', content:'Business: ' + biz + '
+Type: ' + type + '
+Neighborhood: ' + nbhd + ', Kansas City
+
+Generate a Research Brief:
+
+**SEARCH STRINGS TO USE**
+Exact queries for Google, Yelp, and Reddit.
+
+**WHAT TO LOOK FOR — GOOGLE REVIEWS**
+Specific themes and complaint patterns for this business type in KC.
+
+**WHAT TO LOOK FOR — YELP**
+Yelp-specific patterns and filters.
+
+**REDDIT KEYWORDS**
+Exact phrases for r/kansascity and r/KCFoodScene.
+
+**COMPETITOR SIGNALS**
+How to identify 3-5 direct competitors from review data and gaps to watch.'}]
+    });
+    const text = data.content?.[0]?.text || '';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/
+
+/g,'<br><br>').replace(/
+/g,'<br>');
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Research brief failed.</span>'; }
+}
+
+// =============================================
+// COMPETITORS — AI IDENTIFY
+// =============================================
+async function aiIdentifyCompetitors() {
+  const btn = document.getElementById('comp-run-btn');
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  btn.disabled = true;
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const biz = document.getElementById('s-biz').value || 'this business';
+  const type = document.getElementById('s-type').value || 'business';
+  const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
+  const listEl = document.getElementById('comp-list');
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:700,
+      system:'You are PresageIQ identifying the competitive landscape for a KC business. Use knowledge of Kansas City neighborhoods and business categories. Name real businesses where possible. End your response with a section starting with exactly "PLAIN LIST:" followed by competitor names one per line.',
+      messages:[{role:'user', content:'Business: ' + biz + '
+Type: ' + type + '
+Neighborhood: ' + nbhd + ', Kansas City
+
+Identify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots. Then a one-line COMPETITIVE LANDSCAPE SUMMARY.
+
+Finally:
+PLAIN LIST:
+[name — type, one per line]'}]
+    });
+    const text = data.content?.[0]?.text || '';
+    const plainMatch = text.match(/PLAIN LIST:([\s\S]*?)$/i);
+    if (plainMatch && listEl) listEl.value = plainMatch[1].trim();
+    const display = text.replace(/PLAIN LIST:[\s\S]*$/i,'').trim();
+    body.innerHTML = display.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/
+
+/g,'<br><br>').replace(/
+/g,'<br>');
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Competitor scan failed.</span>'; }
+  btn.disabled = false;
 }
 
 // =============================================

@@ -329,7 +329,8 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
             <option value="Not sure yet">Not sure yet — help me decide</option>
           </select>
         </div>
-        <div class="ff"><label class="fl">Business / Concept</label><input class="fi" type="text" id="f-concept" placeholder="e.g. Wine bar, existing restaurant, retail..."/></div>
+        <div class="ff"><label class="fl">Business Name <span style="font-weight:400;color:#3d5060;"> — or "Undecided" if pre-launch</span></label><input class="fi" type="text" id="f-bizname" placeholder="e.g. The Painted Rail, Undecided, Pre-launch concept"/></div>
+    <div class="ff"><label class="fl">Business Type / Concept</label><input class="fi" type="text" id="f-concept" placeholder="e.g. Wine bar, boutique retail, existing restaurant..."/></div>
         <div class="ff"><label class="fl">Target Neighborhood</label>
           <select class="fs" id="f-neighborhood">
             <option value="">— Select a neighborhood —</option>
@@ -346,6 +347,34 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
           </select>
         </div>
         <div class="ff"><label class="fl">Phone (Optional)</label><input class="fi" type="tel" id="f-phone" placeholder="(816) 555-0100"/></div>
+    <div class="ff full" style="margin-top:4px;">
+      <button type="button" onclick="toggleAdditionalDetails()" style="background:transparent;border:1px solid rgba(255,255,255,0.1);color:#8a9aaa;padding:7px 14px;border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer;letter-spacing:.5px;" id="details-toggle">+ Additional Business Details (optional)</button>
+      <div id="additional-details" style="display:none;margin-top:12px;border:1px solid rgba(255,255,255,0.06);border-radius:4px;padding:14px;background:rgba(255,255,255,0.02);">
+        <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#3d5060;margin-bottom:12px;">These help us prepare before your session</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div><label style="display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3d5060;margin-bottom:4px;">Business Category</label>
+            <select class="fs" id="f-biztype" style="width:100%;">
+              <option value="">— Select if known —</option>
+              <option>Restaurant / Food &amp; Beverage</option>
+              <option>Retail</option>
+              <option>Service Business</option>
+              <option>Bar / Nightlife</option>
+              <option>Café / Coffee</option>
+              <option>Food Truck / Pop-Up</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div><label style="display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3d5060;margin-bottom:4px;">Avg Transaction / Check</label>
+            <input class="fi" type="text" id="f-check" placeholder="e.g. $18, $45, unknown" style="width:100%;"/></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3d5060;margin-bottom:4px;">Years in Business</label>
+            <input class="fi" type="text" id="f-years" placeholder="e.g. 3 years, pre-launch" style="width:100%;"/></div>
+          <div><label style="display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3d5060;margin-bottom:4px;">Est. Annual Revenue</label>
+            <input class="fi" type="text" id="f-revenue" placeholder="e.g. $400k, unknown" style="width:100%;"/></div>
+        </div>
+      </div>
+    </div>
         <div class="ff full"><label class="fl">Tell Us More</label>
           <textarea class="fta" id="f-message" placeholder="Presage Consult: describe your concept and what you want answered. Presage Audit: tell us about your business — type, size, biggest challenge, and what you want to change."></textarea>
         </div>
@@ -376,10 +405,12 @@ async function submitForm(){
   const name=document.getElementById('f-name').value.trim();
   const email=document.getElementById('f-email').value.trim();
   const service=document.getElementById('f-service').value;
+  const bizname=document.getElementById('f-bizname').value.trim();
   const concept=document.getElementById('f-concept').value.trim();
   const neighborhood=document.getElementById('f-neighborhood').value;
   const phone=document.getElementById('f-phone').value.trim();
   const message=document.getElementById('f-message').value.trim();
+  const biztype=document.getElementById('f-biztype').value;
   const btn=document.getElementById('submit-btn');
   if(!name||!email||!service||!concept){alert('Please fill in your name, email, service, and business/concept.');return;}
   if(!email.includes('@')){alert('Please enter a valid email address.');return;}
@@ -392,6 +423,8 @@ async function submitForm(){
         name,
         email,
         service,
+        bizname:bizname||null,
+        biztype:biztype||null,
         concept,
         neighborhood:neighborhood||null,
         phone:phone||null,
@@ -405,6 +438,14 @@ async function submitForm(){
     btn.disabled=false;btn.textContent='Submit Request →';
     alert('Something went wrong. Please email walley.research@gmail.com directly.');
   }
+}
+
+function toggleAdditionalDetails(){
+  const el=document.getElementById('additional-details');
+  const btn=document.getElementById('details-toggle');
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  btn.textContent=open?'− Hide Additional Details':'+ Additional Business Details (optional)';
 }
 
 const obs=new IntersectionObserver(entries=>{
