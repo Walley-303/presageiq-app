@@ -1541,32 +1541,7 @@ async function generateReviewResearchBrief() {
   const biz = document.getElementById('s-biz').value || 'this business';
   const type = document.getElementById('s-type').value || 'business';
   const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
-  const prompt = 'Business: ' + biz + '
-Type: ' + type + '
-Neighborhood: ' + nbhd + ', Kansas City
-
-'
-    + 'Generate a Research Brief:
-
-'
-    + '**SEARCH STRINGS TO USE**
-Exact queries for Google, Yelp, and Reddit.
-
-'
-    + '**WHAT TO LOOK FOR — GOOGLE REVIEWS**
-Specific themes and complaint patterns for this business type in KC.
-
-'
-    + '**WHAT TO LOOK FOR — YELP**
-Yelp-specific patterns and filters.
-
-'
-    + '**REDDIT KEYWORDS**
-Exact phrases for r/kansascity and r/KCFoodScene.
-
-'
-    + '**COMPETITOR SIGNALS**
-How to identify 3-5 direct competitors from review data and gaps to watch.';
+  const prompt = `Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nGenerate a Research Brief:\n\n**SEARCH STRINGS TO USE**\nExact queries for Google, Yelp, and Reddit.\n\n**WHAT TO LOOK FOR — GOOGLE REVIEWS**\nSpecific themes and complaint patterns for this business type in KC.\n\n**WHAT TO LOOK FOR — YELP**\nYelp-specific patterns and filters.\n\n**REDDIT KEYWORDS**\nExact phrases for r/kansascity and r/KCFoodScene.\n\n**COMPETITOR SIGNALS**\nHow to identify 3-5 direct competitors from review data and gaps to watch.`;
   try {
     const data = await callAI({
       model:'claude-sonnet-4-6', max_tokens:700,
@@ -1574,10 +1549,7 @@ How to identify 3-5 direct competitors from review data and gaps to watch.';
       messages:[{role:'user', content: prompt}]
     });
     const text = data.content?.[0]?.text || '';
-    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/
-
-/g,'<br><br>').replace(/
-/g,'<br>');
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Research brief failed — try again.</span>'; }
 }
 
@@ -1595,19 +1567,7 @@ async function aiIdentifyCompetitors() {
   const type = document.getElementById('s-type').value || 'business';
   const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
   const listEl = document.getElementById('comp-list');
-  const prompt = 'Business: ' + biz + '
-Type: ' + type + '
-Neighborhood: ' + nbhd + ', Kansas City
-
-'
-    + 'Identify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots.
-'
-    + 'Then give a one-line COMPETITIVE LANDSCAPE SUMMARY.
-
-'
-    + 'Finally output exactly:
-PLAIN LIST:
-[name — type, one per line]';
+  const prompt = `Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nIdentify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots.\nThen give a one-line COMPETITIVE LANDSCAPE SUMMARY.\n\nFinally output exactly:\nPLAIN LIST:\n[name — type, one per line]`;
   try {
     const data = await callAI({
       model:'claude-sonnet-4-6', max_tokens:700,
@@ -1618,10 +1578,7 @@ PLAIN LIST:
     const plainMatch = text.match(/PLAIN LIST:([\s\S]*?)$/i);
     if (plainMatch && listEl) listEl.value = plainMatch[1].trim();
     const display = text.replace(/PLAIN LIST:[\s\S]*$/i,'').trim();
-    body.innerHTML = display.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/
-
-/g,'<br><br>').replace(/
-/g,'<br>');
+    body.innerHTML = display.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Competitor scan failed — try again.</span>'; }
   btn.disabled = false;
 }
