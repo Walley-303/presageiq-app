@@ -7,7 +7,11 @@ const PORT = process.env.PORT || 3000;
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+// ── Page routes ───────────────────────────────────────────────────────────────
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'presage-consult.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ── PostgreSQL ────────────────────────────────────────────────────────────────
 const pool = new Pool({
@@ -221,9 +225,9 @@ app.patch('/api/clients/:id', async (req, res) => {
   }
 });
 
-// ── SPA fallback ──────────────────────────────────────────────────────────────
+// ── Fallback ──────────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'presage-consult.html'));
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
