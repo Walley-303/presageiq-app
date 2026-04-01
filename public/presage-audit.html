@@ -1541,37 +1541,44 @@ async function generateReviewResearchBrief() {
   const biz = document.getElementById('s-biz').value || 'this business';
   const type = document.getElementById('s-type').value || 'business';
   const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
-  try {
-    const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:700,
-      system:'You are PresageIQ preparing a pre-session research brief for a business analyst. Generate specific, actionable search instructions and keyword lists the analyst can use right now. Be precise — name exact search strings, platforms, and what signals to flag.',
-      messages:[{role:'user', content:'Business: ' + biz + '
+  const prompt = 'Business: ' + biz + '
 Type: ' + type + '
 Neighborhood: ' + nbhd + ', Kansas City
 
-Generate a Research Brief:
+'
+    + 'Generate a Research Brief:
 
-**SEARCH STRINGS TO USE**
+'
+    + '**SEARCH STRINGS TO USE**
 Exact queries for Google, Yelp, and Reddit.
 
-**WHAT TO LOOK FOR — GOOGLE REVIEWS**
+'
+    + '**WHAT TO LOOK FOR — GOOGLE REVIEWS**
 Specific themes and complaint patterns for this business type in KC.
 
-**WHAT TO LOOK FOR — YELP**
+'
+    + '**WHAT TO LOOK FOR — YELP**
 Yelp-specific patterns and filters.
 
-**REDDIT KEYWORDS**
+'
+    + '**REDDIT KEYWORDS**
 Exact phrases for r/kansascity and r/KCFoodScene.
 
-**COMPETITOR SIGNALS**
-How to identify 3-5 direct competitors from review data and gaps to watch.'}]
+'
+    + '**COMPETITOR SIGNALS**
+How to identify 3-5 direct competitors from review data and gaps to watch.';
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:700,
+      system:'You are PresageIQ preparing a pre-session research brief for a business analyst. Generate specific, actionable search instructions and keyword lists the analyst can use right now. Be precise — name exact search strings and what signals to flag.',
+      messages:[{role:'user', content: prompt}]
     });
     const text = data.content?.[0]?.text || '';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/
 
 /g,'<br><br>').replace(/
 /g,'<br>');
-  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Research brief failed.</span>'; }
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Research brief failed — try again.</span>'; }
 }
 
 // =============================================
@@ -1588,19 +1595,24 @@ async function aiIdentifyCompetitors() {
   const type = document.getElementById('s-type').value || 'business';
   const nbhd = document.getElementById('s-nbhd').value || 'Kansas City';
   const listEl = document.getElementById('comp-list');
+  const prompt = 'Business: ' + biz + '
+Type: ' + type + '
+Neighborhood: ' + nbhd + ', Kansas City
+
+'
+    + 'Identify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots.
+'
+    + 'Then give a one-line COMPETITIVE LANDSCAPE SUMMARY.
+
+'
+    + 'Finally output exactly:
+PLAIN LIST:
+[name — type, one per line]';
   try {
     const data = await callAI({
       model:'claude-sonnet-4-6', max_tokens:700,
       system:'You are PresageIQ identifying the competitive landscape for a KC business. Use knowledge of Kansas City neighborhoods and business categories. Name real businesses where possible. End your response with a section starting with exactly "PLAIN LIST:" followed by competitor names one per line.',
-      messages:[{role:'user', content:'Business: ' + biz + '
-Type: ' + type + '
-Neighborhood: ' + nbhd + ', Kansas City
-
-Identify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots. Then a one-line COMPETITIVE LANDSCAPE SUMMARY.
-
-Finally:
-PLAIN LIST:
-[name — type, one per line]'}]
+      messages:[{role:'user', content: prompt}]
     });
     const text = data.content?.[0]?.text || '';
     const plainMatch = text.match(/PLAIN LIST:([\s\S]*?)$/i);
@@ -1610,7 +1622,7 @@ PLAIN LIST:
 
 /g,'<br><br>').replace(/
 /g,'<br>');
-  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Competitor scan failed.</span>'; }
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Competitor scan failed — try again.</span>'; }
   btn.disabled = false;
 }
 
