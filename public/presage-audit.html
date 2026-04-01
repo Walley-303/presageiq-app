@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Presage Audit — Internal Tool · Towns & Walley Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#080b10;--bg2:#0d1117;--bg3:#131920;--bg4:#1a2230;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#eef1f4;--text2:#8a9aaa;--text3:#3d5060;
+  --gold:#c8963e;--gold2:#e8b86d;
+  --teal:#52c5b0;--purple:#a78bfa;--danger:#f85149;--warn:#e3b341;
+  --font-display:'Syne',sans-serif;--font-mono:'DM Mono',monospace;
+}
+*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;display:flex;flex-direction:column;}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.4;}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:50px;flex-shrink:0;background:var(--bg2);border-bottom:1px solid var(--border);position:relative;}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--gold),transparent 60%);}
+.logo{font-family:var(--font-display);font-size:14px;font-weight:800;}
+.logo span{color:var(--gold);}
+.tool-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-left:4px;}
+.client-pill{background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.25);color:var(--gold);font-size:10px;padding:3px 10px;border-radius:3px;letter-spacing:.5px;cursor:pointer;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.export-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);padding:5px 12px;border-radius:3px;font-family:var(--font-mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .2s;}
+.export-btn:hover{border-color:var(--gold);color:var(--gold);}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);}
+
+/* LAYOUT */
+.main{display:flex;flex:1;overflow:hidden;}
+
+/* SIDEBAR — MODULES */
+.sidebar{width:200px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--border);}
+.sidebar-head-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);}
+.module-nav{padding:8px;}
+.mnav-item{padding:9px 10px;border-radius:4px;cursor:pointer;transition:all .2s;border:1px solid transparent;margin-bottom:2px;display:flex;align-items:center;gap:8px;}
+.mnav-item:hover{background:var(--bg3);}
+.mnav-item.active{background:rgba(200,150,62,.07);border-color:rgba(200,150,62,.2);}
+.mnav-icon{font-size:12px;flex-shrink:0;width:16px;}
+.mnav-label{font-size:11px;color:var(--text2);}
+.mnav-item.active .mnav-label{color:var(--gold);}
+.mnav-check{margin-left:auto;font-size:9px;color:var(--teal);opacity:0;}
+.mnav-item.done .mnav-check{opacity:1;}
+.sidebar-footer{margin-top:auto;padding:12px;border-top:1px solid var(--border);}
+.progress-label{font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.progress-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--teal));border-radius:2px;transition:width .4s ease;}
+.progress-pct{font-size:10px;color:var(--text2);margin-top:5px;}
+
+/* CONTENT */
+.content{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
+.panel{display:none;flex:1;flex-direction:column;}
+.panel.active{display:flex;}
+.panel-head{padding:20px 24px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);}
+.panel-title{font-family:var(--font-display);font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px;}
+.panel-desc{font-size:11px;color:var(--text2);line-height:1.5;}
+.panel-body{padding:20px 24px;flex:1;overflow-y:auto;}
+
+/* SHARED FORM */
+.field-group{margin-bottom:20px;}
+.field-group-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.field-group-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.field-row.three{grid-template-columns:1fr 1fr 1fr;}
+.field-row.one{grid-template-columns:1fr;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);}
+.fi,.fs,.fta{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:3px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;width:100%;}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--gold);}
+.fi::placeholder,.fta::placeholder{color:var(--text3);}
+.fs{appearance:none;cursor:pointer;}
+.fs option{background:var(--bg3);}
+.fta{resize:vertical;min-height:80px;line-height:1.6;}
+
+/* MENU ITEMS */
+.menu-items{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.menu-item-row{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:10px 12px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;}
+.menu-item-row:hover{border-color:var(--border2);}
+.mi-name{font-size:12px;color:var(--text);}
+.mi-stat{font-size:11px;text-align:center;}
+.mi-badge{font-size:9px;padding:2px 7px;border-radius:2px;text-align:center;letter-spacing:.5px;}
+.mi-star{background:rgba(200,150,62,.1);color:var(--gold);border:1px solid rgba(200,150,62,.2);}
+.mi-ok{background:rgba(82,197,176,.08);color:var(--teal);border:1px solid rgba(82,197,176,.18);}
+.mi-poor{background:rgba(248,81,73,.08);color:var(--danger);border:1px solid rgba(248,81,73,.18);}
+.mi-del{background:transparent;border:1px solid var(--border);color:var(--text3);width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.mi-del:hover{border-color:var(--danger);color:var(--danger);}
+.add-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);padding:7px 14px;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:.5px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px;}
+.add-btn:hover{border-color:var(--gold);color:var(--gold);}
+
+/* VENDOR TABLE */
+.vendor-rows{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.vendor-row{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:10px 12px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;}
+.vendor-row:hover{border-color:var(--border2);}
+
+/* AI RESULT CARDS */
+.ai-result{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:16px;margin-top:16px;font-size:12px;color:var(--text2);line-height:1.75;display:none;}
+.ai-result.visible{display:block;}
+.ai-result-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+.ai-result-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);}
+.ai-result strong{color:var(--text);}
+.run-btn{background:var(--gold);border:none;color:#080b10;padding:8px 18px;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:opacity .2s;display:flex;align-items:center;gap:6px;}
+.run-btn:hover{opacity:.85;}
+.run-btn:disabled{opacity:.4;cursor:not-allowed;}
+.run-btn.teal{background:var(--teal);}
+.run-btn.purple{background:var(--purple);}
+
+/* SIGNAL TAGS */
+.signal-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.stag-item{font-size:10px;padding:3px 9px;border-radius:3px;}
+.stag-pos{background:rgba(82,197,176,.1);color:var(--teal);border:1px solid rgba(82,197,176,.2);}
+.stag-neg{background:rgba(248,81,73,.08);color:var(--danger);border:1px solid rgba(248,81,73,.18);}
+.stag-opp{background:rgba(200,150,62,.1);color:var(--gold);border:1px solid rgba(200,150,62,.2);}
+
+/* BRIEF BUILDER */
+.brief-section{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:12px;}
+.brief-section-title{font-family:var(--font-display);font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.brief-content{font-size:12px;color:var(--text2);line-height:1.75;white-space:pre-wrap;}
+
+/* MODE BUTTONS */
+.mode-btn{flex:1;background:transparent;border:1px solid var(--border);color:var(--text3);padding:5px 8px;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:.5px;cursor:pointer;transition:all .2s;}
+.mode-btn.active{background:rgba(200,150,62,.1);border-color:rgba(200,150,62,.3);color:var(--gold);}
+.mode-btn:hover{border-color:var(--border2);color:var(--text2);}
+
+/* VIABILITY METER */
+.viability-meter{display:flex;align-items:center;gap:12px;margin:16px 0;}
+.vm-track{flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;}
+.vm-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.vm-label{font-size:11px;color:var(--text2);white-space:nowrap;}
+.vm-score{font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--gold);}
+
+/* PROJECTION CARDS */
+.proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0;}
+.proj-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px;}
+.proj-card-label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin-bottom:6px;}
+.proj-card-value{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold);margin-bottom:3px;}
+.proj-card-sub{font-size:10px;color:var(--text3);line-height:1.4;}
+
+/* FUNDING TAGS */
+.funding-item{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:12px 14px;margin-bottom:8px;}
+.funding-name{font-size:12px;color:var(--text);margin-bottom:3px;font-weight:500;}
+.funding-desc{font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:6px;}
+.funding-tags{display:flex;gap:5px;flex-wrap:wrap;}
+.ftag{font-size:9px;padding:2px 6px;border-radius:2px;}
+.ftag-vet{background:rgba(200,150,62,.1);color:var(--gold);border:1px solid rgba(200,150,62,.2);}
+.ftag-sb{background:rgba(82,197,176,.08);color:var(--teal);border:1px solid rgba(82,197,176,.18);}
+.ftag-kc{background:rgba(167,139,250,.08);color:var(--purple);border:1px solid rgba(167,139,250,.18);}
+
+/* TYPING */
+@keyframes typing{0%,100%{opacity:.3;}50%{opacity:1;}}
+.dot-t{width:4px;height:4px;border-radius:50%;background:var(--gold);animation:typing .8s infinite;display:inline-block;}
+.dot-t:nth-child(2){animation-delay:.15s;}
+.dot-t:nth-child(3){animation-delay:.3s;}
+.typing-row{display:flex;gap:4px;align-items:center;padding:4px 0;}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div><div class="logo">Presage<span>IQ</span></div></div>
+  <span class="tool-label">Audit Tool · Internal</span>
+  <div class="client-pill" id="client-name-pill" onclick="editClient()">◎ No Client Loaded</div>
+  <div class="topbar-right">
+    <div class="status-dot"></div>
+    <span style="font-size:10px;color:var(--text2);letter-spacing:.5px;">AI Active · Proxy</span>
+    <button class="export-btn" onclick="buildBrief()">◎ Generate Presage Brief</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- MODULE NAV -->
+  <div class="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-head-label">Mode</div>
+      <div style="display:flex;gap:4px;margin-top:8px;">
+        <button class="mode-btn active" id="mode-audit" onclick="setMode('audit')">Audit</button>
+        <button class="mode-btn" id="mode-consult" onclick="setMode('consult')">Consult</button>
+      </div>
+    </div>
+    <div class="module-nav" id="audit-nav">
+      <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:4px 2px 6px;">Existing Business</div>
+      <div class="mnav-item active" onclick="showPanel('setup')" id="nav-setup">
+        <span class="mnav-icon">◎</span><span class="mnav-label">Client Setup</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('menu')" id="nav-menu">
+        <span class="mnav-icon">▤</span><span class="mnav-label">Menu Analysis</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('reviews')" id="nav-reviews">
+        <span class="mnav-icon">◉</span><span class="mnav-label">Review Signals</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('inventory')" id="nav-inventory">
+        <span class="mnav-icon">▦</span><span class="mnav-label">Inventory &amp; Supply</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('competitors')" id="nav-competitors">
+        <span class="mnav-icon">◈</span><span class="mnav-label">Competitors</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('brief')" id="nav-brief">
+        <span class="mnav-icon">▸</span><span class="mnav-label">Presage Brief</span><span class="mnav-check">✓</span>
+      </div>
+    </div>
+    <div class="module-nav" id="consult-nav" style="display:none;">
+      <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:4px 2px 6px;">Pre-Launch Concept</div>
+      <div class="mnav-item" onclick="showPanel('c-concept')" id="nav-c-concept">
+        <span class="mnav-icon">◎</span><span class="mnav-label">Concept Setup</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('c-market')" id="nav-c-market">
+        <span class="mnav-icon">◉</span><span class="mnav-label">Market Viability</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('c-community')" id="nav-c-community">
+        <span class="mnav-icon">▤</span><span class="mnav-label">Community Intel</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('c-financials')" id="nav-c-financials">
+        <span class="mnav-icon">▦</span><span class="mnav-label">Financial Projection</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('c-funding')" id="nav-c-funding">
+        <span class="mnav-icon">◈</span><span class="mnav-label">Funding Pathways</span><span class="mnav-check">✓</span>
+      </div>
+      <div class="mnav-item" onclick="showPanel('c-report')" id="nav-c-report">
+        <span class="mnav-icon">▸</span><span class="mnav-label">Consult Report</span><span class="mnav-check">✓</span>
+      </div>
+    </div>
+    <div style="padding:8px 8px 0;border-top:1px solid var(--border);margin-top:8px;">
+      <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:4px 2px 6px;">Client Management</div>
+      <div class="mnav-item" onclick="showPanel('client-queue'); loadClientQueue();" id="nav-client-queue">
+        <span class="mnav-icon">&#9643;</span><span class="mnav-label">Client Queue</span><span class="mnav-check">&#10003;</span>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="progress-label">Session Progress</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:16%"></div></div>
+      <div class="progress-pct" id="progress-pct">1 / 6 modules</div>
+    </div>
+  </div>
+
+  <!-- PANELS -->
+  <div class="content">
+
+    <!-- 01 CLIENT SETUP -->
+    <div class="panel active" id="panel-setup">
+      <div class="panel-head">
+        <div class="panel-title">Client Setup</div>
+        <div class="panel-desc">Enter client and business details before starting the audit. This context loads into every AI analysis.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Client Information</div>
+          <div class="field-row">
+            <div class="field"><label>Client Name</label><input class="fi" id="s-client" placeholder="Full name or business contact" oninput="updateClientPill()"/></div>
+            <div class="field"><label>Business Name</label><input class="fi" id="s-biz" placeholder="Restaurant / business name"/></div>
+          </div>
+          <div class="field-row three">
+            <div class="field"><label>Business Type</label>
+              <select class="fs" id="s-type">
+                <option value="">— Select —</option>
+                <option>Restaurant / Food & Beverage</option>
+                <option>Retail</option>
+                <option>Service Business</option>
+                <option>Bar / Nightlife</option>
+                <option>Café / Coffee</option>
+                <option>Food Truck / Pop-Up</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Neighborhood</label>
+              <select class="fs" id="s-nbhd">
+                <option value="">— Select —</option>
+                <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+                <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+                <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+                <option>Grandview</option><option>East Side / Prospect</option>
+                <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+                <option>North KC</option><option>Gladstone</option><option>Independence</option>
+                <option>Lee's Summit</option><option>Overland Park</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Years in Business</label><input class="fi" id="s-years" placeholder="e.g. 3"/></div>
+          </div>
+          <div class="field-row three">
+            <div class="field"><label>Est. Annual Revenue</label><input class="fi" id="s-revenue" placeholder="e.g. $400,000"/></div>
+            <div class="field"><label>Avg Check / Transaction</label><input class="fi" id="s-check" placeholder="e.g. $22"/></div>
+            <div class="field"><label>Seating / Sq Ft</label><input class="fi" id="s-size" placeholder="e.g. 65 seats"/></div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Client's Stated Challenge</div>
+          <div class="field-row one">
+            <div class="field"><label>What problem are they trying to solve?</label>
+              <textarea class="fta" id="s-challenge" placeholder="What did they tell you when they reached out? What are they struggling with? What do they hope changes?"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Pre-Audit Notes</div>
+          <div class="field-row one">
+            <div class="field"><label>Any additional context before the session</label>
+              <textarea class="fta" id="s-notes" placeholder="Pre-call notes, files received, first impressions, anything worth flagging..."></textarea>
+            </div>
+          </div>
+        </div>
+        <button class="run-btn" onclick="markDone('setup');showPanel('menu')">Save &amp; Start Audit →</button>
+      </div>
+    </div>
+
+    <!-- 02 MENU ANALYSIS -->
+    <div class="panel" id="panel-menu">
+      <div class="panel-head">
+        <div class="panel-title">Menu &amp; Product Analysis</div>
+        <div class="panel-desc">Enter menu items with performance indicators. Run AI analysis to score items, identify stars and underperformers, and surface launch opportunities.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Menu Items</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:6px;padding:0 4px;">
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;">Item Name</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Price</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Sales Vol</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Review Mentions</span>
+            <span></span>
+          </div>
+          <div class="menu-items" id="menu-items-list"></div>
+          <button class="add-btn" onclick="addMenuItem()">+ Add Item</button>
+        </div>
+
+        <div class="field-group">
+          <div class="field-group-title">Additional Context</div>
+          <div class="field-row">
+            <div class="field"><label>Menu highlights (owner's view)</label><textarea class="fta" id="m-highlights" placeholder="What does the owner think their best items are?" style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Known weak spots</label><textarea class="fta" id="m-weak" placeholder="Items they're unsure about, complaints they've heard..." style="min-height:60px;"></textarea></div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Pasted reviews mentioning specific items (optional)</label>
+              <textarea class="fta" id="m-reviews" placeholder="Paste any Google, Yelp, or social reviews that mention menu items — PresageIQ will extract item-level signals..." style="min-height:80px;"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="run-btn" id="menu-run-btn" onclick="analyzeMenu()">◎ Run Menu Analysis</button>
+          <button class="run-btn teal" id="menu-reddit-btn" onclick="scanMenuReddit()">◎ Scan Community for Item Signals</button>
+        </div>
+
+        <div class="ai-result" id="menu-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Menu Analysis — PresageIQ</span></div>
+          <div id="menu-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 REVIEW SIGNALS -->
+    <div class="panel" id="panel-reviews">
+      <div class="panel-head">
+        <div class="panel-title">Review Signal Extraction</div>
+        <div class="panel-desc">Paste raw reviews from any source. PresageIQ extracts what customers love, what they complain about, and what they're asking for that doesn't exist yet.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Paste Reviews</div>
+          <div class="field-row one">
+            <div class="field"><label>Google Reviews</label><textarea class="fta" id="r-google" placeholder="Paste Google reviews here — copy/paste from Google Maps or your GMB dashboard..." style="min-height:100px;"></textarea></div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Yelp Reviews</label><textarea class="fta" id="r-yelp" placeholder="Paste Yelp reviews here..." style="min-height:80px;"></textarea></div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Social / Other (Facebook, Nextdoor, TikTok comments, etc.)</label><textarea class="fta" id="r-social" placeholder="Paste any other community content here..." style="min-height:80px;"></textarea></div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="run-btn" id="review-run-btn" onclick="analyzeReviews()">◎ Extract Review Signals</button>
+          <button class="run-btn teal" id="review-reddit-btn" onclick="scanRedditReviews()">◎ Scan Reddit for Mentions</button>
+        </div>
+
+        <div class="ai-result" id="review-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Review Signals — PresageIQ</span></div>
+          <div id="review-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 04 INVENTORY & SUPPLY -->
+    <div class="panel" id="panel-inventory">
+      <div class="panel-head">
+        <div class="panel-title">Inventory &amp; Supply Chain</div>
+        <div class="panel-desc">Document current vendors and sourcing. PresageIQ identifies consolidation opportunities, pricing misalignment, and local KC sourcing alternatives.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Current Vendors</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:6px;padding:0 4px;">
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;">Vendor / Supplier</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Category</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Est. Monthly $</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Local?</span>
+            <span></span>
+          </div>
+          <div class="vendor-rows" id="vendor-list"></div>
+          <button class="add-btn" onclick="addVendor()">+ Add Vendor</button>
+        </div>
+
+        <div class="field-group">
+          <div class="field-group-title">Supply Chain Context</div>
+          <div class="field-row">
+            <div class="field"><label>Known sourcing problems</label><textarea class="fta" id="inv-problems" placeholder="Late deliveries, quality issues, price increases..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Items they wish they could source better</label><textarea class="fta" id="inv-wish" placeholder="Produce quality, specific proteins, local options they've considered..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+
+        <button class="run-btn" id="inv-run-btn" onclick="analyzeInventory()">◎ Analyze Supply Chain</button>
+
+        <div class="ai-result" id="inv-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Supply Chain Analysis — PresageIQ</span></div>
+          <div id="inv-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 05 COMPETITORS -->
+    <div class="panel" id="panel-competitors">
+      <div class="panel-head">
+        <div class="panel-title">Competitor Gap Analysis</div>
+        <div class="panel-desc">Map the competitive landscape. PresageIQ identifies what competitors are winning on, what they're leaving open, and where to compete or differentiate.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Key Competitors</div>
+          <div class="field-row one">
+            <div class="field"><label>List main competitors (name, type, proximity)</label>
+              <textarea class="fta" id="comp-list" placeholder="e.g.&#10;1. The Farmhouse — farm-to-table, 3 blocks away&#10;2. Bella Napoli — Italian, same street&#10;3. Local brewpub — casual dining, competing for same demographic..." style="min-height:100px;"></textarea>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>What are competitors winning on?</label><textarea class="fta" id="comp-wins" placeholder="What's drawing customers to them? Better ambiance, specific dish, price, loyalty?" style="min-height:70px;"></textarea></div>
+            <div class="field"><label>What are competitors NOT doing well?</label><textarea class="fta" id="comp-gaps" placeholder="Complaints you've seen in their reviews, gaps in their menu or service..." style="min-height:70px;"></textarea></div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="run-btn" id="comp-run-btn" onclick="analyzeCompetitors()">◎ Run Competitor Analysis</button>
+          <button class="run-btn teal" id="comp-reddit-btn" onclick="scanCompetitorReddit()">◎ Scan Reddit for Competitor Mentions</button>
+        </div>
+
+        <div class="ai-result" id="comp-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Competitor Analysis — PresageIQ</span></div>
+          <div id="comp-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 06 PRESAGE BRIEF -->
+    <div class="panel" id="panel-brief">
+      <div class="panel-head">
+        <div class="panel-title">Presage Brief Extended</div>
+        <div class="panel-desc">Generate the full written audit report. Synthesizes all module findings into a structured deliverable ready to send to the client.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="brief-run-btn" onclick="generateBrief()">◎ Generate Full Presage Brief</button>
+          <button class="run-btn" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);" onclick="copyBrief()">Copy to Clipboard</button>
+        </div>
+        <div id="brief-output">
+          <div style="font-size:11px;color:var(--text3);padding:20px 0;line-height:1.8;">Complete all audit modules first, then generate the Presage Brief. The report synthesizes findings from menu analysis, review signals, supply chain, and competitor data into a structured client deliverable.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSULT: 01 CONCEPT SETUP -->
+    <div class="panel" id="panel-c-concept">
+      <div class="panel-head">
+        <div class="panel-title">Concept Setup</div>
+        <div class="panel-desc">Capture the client's business idea before testing it against market data. The more detail here, the sharper the analysis.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Client Information</div>
+          <div class="field-row">
+            <div class="field"><label>Client Name</label><input class="fi" id="cc-client" placeholder="Full name"/></div>
+            <div class="field"><label>Email</label><input class="fi" id="cc-email" placeholder="client@email.com"/></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Background</label>
+              <select class="fs" id="cc-background">
+                <option value="">— Select —</option>
+                <option>First-time entrepreneur</option>
+                <option>Industry experience, first business</option>
+                <option>Serial entrepreneur</option>
+                <option>Military veteran</option>
+                <option>Recent graduate</option>
+                <option>Career changer</option>
+              </select>
+            </div>
+            <div class="field"><label>Investment Range Available</label>
+              <select class="fs" id="cc-investment">
+                <option value="">— Select —</option>
+                <option>Under $25,000</option>
+                <option>$25,000 – $50,000</option>
+                <option>$50,000 – $100,000</option>
+                <option>$100,000 – $250,000</option>
+                <option>$250,000+</option>
+                <option>Seeking funding — minimal personal capital</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">The Concept</div>
+          <div class="field-row three">
+            <div class="field"><label>Business Type</label>
+              <select class="fs" id="cc-type">
+                <option value="">— Select —</option>
+                <option>Restaurant / Food &amp; Beverage</option>
+                <option>Retail — Clothing / Apparel</option>
+                <option>Retail — Specialty / Boutique</option>
+                <option>Café / Coffee Shop</option>
+                <option>Bar / Taproom</option>
+                <option>Food Truck / Pop-Up</option>
+                <option>Service Business</option>
+                <option>Health / Wellness</option>
+                <option>Fitness / Studio</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Target Neighborhood</label>
+              <select class="fs" id="cc-nbhd">
+                <option value="">— Select —</option>
+                <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+                <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+                <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+                <option>Grandview</option><option>East Side / Prospect</option>
+                <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+                <option>North KC</option><option>Gladstone</option><option>Independence</option>
+                <option>Lee's Summit</option><option>Overland Park</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Target Avg Transaction</label><input class="fi" id="cc-check" placeholder="e.g. $18"/></div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Describe the concept in detail</label>
+              <textarea class="fta" id="cc-concept" placeholder="What is the business? What makes it unique? Who is the target customer? What's the experience like? Be as specific as possible..." style="min-height:100px;"></textarea>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Why this neighborhood?</label><textarea class="fta" id="cc-why" placeholder="Personal connection, spotted a gap, foot traffic observation..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Biggest concern?</label><textarea class="fta" id="cc-concern" placeholder="Competition, capital, experience, location..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+        <button class="run-btn" onclick="markConsultDone('c-concept');showPanel('c-market')">Save &amp; Run Market Analysis →</button>
+      </div>
+    </div>
+
+    <!-- CONSULT: 02 MARKET VIABILITY -->
+    <div class="panel" id="panel-c-market">
+      <div class="panel-head">
+        <div class="panel-title">Market Viability</div>
+        <div class="panel-desc">Tests the concept against PresageIQ neighborhood data — demand signals, saturation, demographic fit, and opportunity score.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+          <button class="run-btn" id="mkt-run-btn" onclick="runMarketAnalysis()">◎ Run Market Analysis</button>
+          <button class="run-btn teal" id="mkt-reddit-btn" onclick="runConceptReddit()">◎ Scan Community for Concept Signals</button>
+        </div>
+        <div class="ai-result visible" id="mkt-result" style="display:block;min-height:60px;">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Market Viability — PresageIQ</span></div>
+          <div id="mkt-result-body" style="font-size:11px;color:var(--text3);">Complete Concept Setup first, then run analysis.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSULT: 03 COMMUNITY INTEL -->
+    <div class="panel" id="panel-c-community">
+      <div class="panel-head">
+        <div class="panel-title">Community Intelligence</div>
+        <div class="panel-desc">What locals are actually saying about concepts like this — pulled from Reddit, reviews, and KC community sources.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Paste Additional Sources (Optional)</div>
+          <div class="field-row one">
+            <div class="field"><label>Reviews, social posts, or community content about similar businesses</label>
+              <textarea class="fta" id="cc-community-paste" placeholder="Paste Yelp reviews of similar businesses in KC, Reddit threads about the neighborhood, competitor Google reviews..." style="min-height:100px;"></textarea>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="run-btn" id="comm-run-btn" onclick="runCommunityAnalysis()">◎ Analyze Community Signals</button>
+          <button class="run-btn teal" id="comm-reddit-btn" onclick="runConceptReddit()">◎ Pull Live Reddit Signals</button>
+        </div>
+        <div class="ai-result" id="comm-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Community Intelligence — PresageIQ</span></div>
+          <div id="comm-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSULT: 04 FINANCIAL PROJECTION -->
+    <div class="panel" id="panel-c-financials">
+      <div class="panel-head">
+        <div class="panel-title">Financial Projection</div>
+        <div class="panel-desc">Startup cost range, monthly revenue estimate, break-even timeline, and payback period based on concept and neighborhood data.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Additional Context</div>
+          <div class="field-row three">
+            <div class="field"><label>Est. Sq Footage</label><input class="fi" id="cf-sqft" placeholder="e.g. 1,200 sq ft"/></div>
+            <div class="field"><label>Seats / Capacity</label><input class="fi" id="cf-seats" placeholder="e.g. 45 seats"/></div>
+            <div class="field"><label>Operating Hours / Week</label><input class="fi" id="cf-hours" placeholder="e.g. 60 hrs/week"/></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Known costs or commitments</label><textarea class="fta" id="cf-known" placeholder="Equipment quotes, lease discussions, licensing fees..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Revenue assumptions</label><textarea class="fta" id="cf-revenue" placeholder="Any estimates they've done, comparable business research..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+        <button class="run-btn purple" id="fin-run-btn" onclick="runFinancialProjection()">◎ Generate Full Projection</button>
+        <div class="proj-grid" id="proj-cards" style="display:none;">
+          <div class="proj-card"><div class="proj-card-label">Startup Cost Range</div><div class="proj-card-value" id="proj-startup">—</div><div class="proj-card-sub">Estimated total capital needed</div></div>
+          <div class="proj-card"><div class="proj-card-label">Monthly Revenue Est.</div><div class="proj-card-value" id="proj-revenue">—</div><div class="proj-card-sub">At stabilized operations</div></div>
+          <div class="proj-card"><div class="proj-card-label">Break-Even Timeline</div><div class="proj-card-value" id="proj-breakeven">—</div><div class="proj-card-sub">Months to cover operating costs</div></div>
+        </div>
+        <div class="ai-result" id="fin-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Financial Projection — PresageIQ</span></div>
+          <div id="fin-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSULT: 05 FUNDING PATHWAYS -->
+    <div class="panel" id="panel-c-funding">
+      <div class="panel-head">
+        <div class="panel-title">Funding Pathways</div>
+        <div class="panel-desc">Relevant funding sources, grants, and resources based on the client's profile — veteran status, KC location, business type, and capital gap.</div>
+      </div>
+      <div class="panel-body">
+        <button class="run-btn" id="fund-run-btn" onclick="runFundingAnalysis()">◎ Identify Funding Pathways</button>
+        <div class="ai-result" id="fund-result" style="margin-top:16px;">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Funding Pathways — PresageIQ</span></div>
+          <div id="fund-result-body" style="font-size:11px;color:var(--text3);">Complete Concept Setup with client background and investment range, then run analysis.</div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);">KC Resources Always Worth Mentioning</div>
+          <div class="funding-item"><div class="funding-name">UMKC Regnier Institute</div><div class="funding-desc">Entrepreneurship resources, pitch competitions, mentorship. Strong fit for UMKC-connected founders.</div><div class="funding-tags"><span class="ftag ftag-kc">KC</span><span class="ftag ftag-sb">Small Biz</span></div></div>
+          <div class="funding-item"><div class="funding-name">KC Small Business Administration (SBA)</div><div class="funding-desc">SBA 7(a) loans, microloans, and counseling. First stop for any small business seeking debt financing.</div><div class="funding-tags"><span class="ftag ftag-sb">Federal</span><span class="ftag ftag-kc">KC Office</span></div></div>
+          <div class="funding-item"><div class="funding-name">Missouri Veteran Commission — SELF Program</div><div class="funding-desc">Self-Employment for Low-Income Individuals — specific veteran track with business support services.</div><div class="funding-tags"><span class="ftag ftag-vet">Veteran</span><span class="ftag ftag-sb">Missouri</span></div></div>
+          <div class="funding-item"><div class="funding-name">Kauffman Foundation — KC</div><div class="funding-desc">KC-based entrepreneurship foundation with grants, programs, and ecosystem connections. Headquartered here.</div><div class="funding-tags"><span class="ftag ftag-kc">KC</span><span class="ftag ftag-sb">Grant</span></div></div>
+          <div class="funding-item"><div class="funding-name">VA Vocational Rehabilitation (Chapter 31)</div><div class="funding-desc">For service-connected disabled veterans — can cover business startup costs as part of self-employment track.</div><div class="funding-tags"><span class="ftag ftag-vet">Veteran</span><span class="ftag ftag-vet">Federal</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSULT: 06 CONSULT REPORT -->
+    <div class="panel" id="panel-c-report">
+      <div class="panel-head">
+        <div class="panel-title">Presage Consult Report</div>
+        <div class="panel-desc">Full pre-launch intelligence report — viability verdict, financial projection, funding pathways, and recommended next steps.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="crpt-run-btn" onclick="generateConsultReport()">◎ Generate Consult Report</button>
+          <button class="run-btn" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);" onclick="copyConsultReport()">Copy to Clipboard</button>
+        </div>
+        <div id="consult-report-output">
+          <div style="font-size:11px;color:var(--text3);padding:20px 0;line-height:1.8;">Complete the concept modules first, then generate the full report.</div>
+        </div>
+      </div>
+    </div>
+
+  <!-- CLIENT QUEUE -->
+    <div class="panel" id="panel-client-queue">
+      <div class="panel-head">
+        <div class="panel-title">Client Queue</div>
+        <div class="panel-desc">Incoming requests from Presage Consult. Load a client to begin their session.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+          <button class="run-btn" onclick="loadClientQueue()" style="font-size:10px;padding:7px 14px;">&#8635; Refresh</button>
+          <div style="display:flex;gap:6px;">
+            <button onclick="filterQueue('all')" id="qf-all" class="run-btn" style="font-size:9px;padding:5px 10px;background:rgba(200,150,62,.1);border-color:rgba(200,150,62,.3);color:var(--gold);">All</button>
+            <button onclick="filterQueue('pending')" id="qf-pending" class="run-btn" style="font-size:9px;padding:5px 10px;">Pending</button>
+            <button onclick="filterQueue('active')" id="qf-active" class="run-btn" style="font-size:9px;padding:5px 10px;">Active</button>
+            <button onclick="filterQueue('complete')" id="qf-complete" class="run-btn" style="font-size:9px;padding:5px 10px;">Complete</button>
+          </div>
+        </div>
+        <div id="queue-status" style="font-size:11px;color:var(--text3);padding:20px 0;">Loading...</div>
+        <div id="queue-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+
+// =============================================
+// CONFIG
+// =============================================
+const PROXY_URL = '/api/chat'; // Self-hosted endpoint
+const moduleOrder = ['setup','menu','reviews','inventory','competitors','brief'];
+const moduleDone = { setup:false, menu:false, reviews:false, inventory:false, competitors:false, brief:false };
+
+// =============================================
+// AI CALL
+// =============================================
+async function callAI(payload) {
+  const resp = await fetch(PROXY_URL, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  if(!resp.ok) throw new Error('AI call failed');
+  return resp.json();
+}
+
+// =============================================
+// NAVIGATION
+// =============================================
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.mnav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  document.getElementById('nav-'+id).classList.add('active');
+}
+
+function markDone(id) {
+  moduleDone[id] = true;
+  document.getElementById('nav-'+id).classList.add('done');
+  updateProgress();
+}
+
+function updateProgress() {
+  const done = Object.values(moduleDone).filter(Boolean).length;
+  const total = moduleOrder.length;
+  const pct = Math.round((done/total)*100);
+  document.getElementById('progress-fill').style.width = pct+'%';
+  document.getElementById('progress-pct').textContent = `${done} / ${total} modules`;
+}
+
+function updateClientPill() {
+  const name = document.getElementById('s-biz').value.trim() || document.getElementById('s-client').value.trim();
+  document.getElementById('client-name-pill').textContent = name ? `◎ ${name}` : '◎ No Client Loaded';
+}
+
+function editClient() { showPanel('setup'); }
+
+// =============================================
+// MENU ITEMS
+// =============================================
+let menuItems = [];
+let vendorItems = [];
+
+function addMenuItem(name='',price='',vol='',mentions='') {
+  const id = Date.now();
+  menuItems.push({id, name, price, vol, mentions});
+  renderMenuItems();
+}
+
+function removeMenuItem(id) {
+  menuItems = menuItems.filter(m => m.id !== id);
+  renderMenuItems();
+}
+
+function renderMenuItems() {
+  const list = document.getElementById('menu-items-list');
+  if(menuItems.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 4px;">No items added yet — click + Add Item below.</div>';
+    return;
+  }
+  list.innerHTML = menuItems.map(m => `
+    <div class="menu-item-row">
+      <input class="fi" style="font-size:12px;" value="${escHtml(m.name)}" placeholder="Item name" oninput="updateMenuItem(${m.id},'name',this.value)"/>
+      <input class="fi" style="font-size:12px;text-align:center;" value="${escHtml(m.price)}" placeholder="$0" oninput="updateMenuItem(${m.id},'price',this.value)"/>
+      <select class="fs" style="font-size:11px;" onchange="updateMenuItem(${m.id},'vol',this.value)">
+        <option value="">Vol</option>
+        <option ${m.vol==='high'?'selected':''} value="high">High</option>
+        <option ${m.vol==='med'?'selected':''} value="med">Medium</option>
+        <option ${m.vol==='low'?'selected':''} value="low">Low</option>
+      </select>
+      <select class="fs" style="font-size:11px;" onchange="updateMenuItem(${m.id},'mentions',this.value)">
+        <option value="">Mentions</option>
+        <option ${m.mentions==='praised'?'selected':''} value="praised">Praised</option>
+        <option ${m.mentions==='neutral'?'selected':''} value="neutral">Neutral</option>
+        <option ${m.mentions==='complained'?'selected':''} value="complained">Complained</option>
+        <option ${m.mentions==='none'?'selected':''} value="none">Not mentioned</option>
+      </select>
+      <button class="mi-del" onclick="removeMenuItem(${m.id})">✕</button>
+    </div>`).join('');
+}
+
+function updateMenuItem(id, field, val) {
+  const item = menuItems.find(m => m.id === id);
+  if(item) item[field] = val;
+}
+
+// =============================================
+// VENDORS
+// =============================================
+function addVendor() {
+  const id = Date.now();
+  vendorItems.push({id, name:'', cat:'', spend:'', local:''});
+  renderVendors();
+}
+
+function removeVendor(id) {
+  vendorItems = vendorItems.filter(v => v.id !== id);
+  renderVendors();
+}
+
+function renderVendors() {
+  const list = document.getElementById('vendor-list');
+  if(vendorItems.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 4px;">No vendors added yet.</div>';
+    return;
+  }
+  list.innerHTML = vendorItems.map(v => `
+    <div class="vendor-row">
+      <input class="fi" style="font-size:12px;" value="${escHtml(v.name)}" placeholder="Vendor name" oninput="updateVendor(${v.id},'name',this.value)"/>
+      <input class="fi" style="font-size:12px;" value="${escHtml(v.cat)}" placeholder="Produce, meat..." oninput="updateVendor(${v.id},'cat',this.value)"/>
+      <input class="fi" style="font-size:12px;text-align:center;" value="${escHtml(v.spend)}" placeholder="$0/mo" oninput="updateVendor(${v.id},'spend',this.value)"/>
+      <select class="fs" style="font-size:11px;" onchange="updateVendor(${v.id},'local',this.value)">
+        <option value="">Local?</option>
+        <option ${v.local==='yes'?'selected':''} value="yes">Yes — KC/Region</option>
+        <option ${v.local==='no'?'selected':''} value="no">No — National</option>
+        <option ${v.local==='unknown'?'selected':''} value="unknown">Unknown</option>
+      </select>
+      <button class="mi-del" onclick="removeVendor(${v.id})">✕</button>
+    </div>`).join('');
+}
+
+function updateVendor(id, field, val) {
+  const v = vendorItems.find(x => x.id === id);
+  if(v) v[field] = val;
+}
+
+// =============================================
+// GET CLIENT CONTEXT
+// =============================================
+function getClientContext() {
+  return `Business: ${document.getElementById('s-biz').value || 'Unknown'}
+Type: ${document.getElementById('s-type').value || 'Unknown'}
+Neighborhood: ${document.getElementById('s-nbhd').value || 'Unknown'}, Kansas City
+Years Operating: ${document.getElementById('s-years').value || 'Unknown'}
+Estimated Annual Revenue: ${document.getElementById('s-revenue').value || 'Unknown'}
+Average Check: ${document.getElementById('s-check').value || 'Unknown'}
+Size: ${document.getElementById('s-size').value || 'Unknown'}
+Client Challenge: ${document.getElementById('s-challenge').value || 'Not provided'}
+Pre-Audit Notes: ${document.getElementById('s-notes').value || 'None'}`;
+}
+
+// =============================================
+// AI ANALYSES
+// =============================================
+async function analyzeMenu() {
+  const btn = document.getElementById('menu-run-btn');
+  const result = document.getElementById('menu-result');
+  const body = document.getElementById('menu-result-body');
+  btn.disabled = true;
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const itemSummary = menuItems.length > 0
+    ? menuItems.map(m => `- ${m.name}: Price ${m.price}, Sales Volume ${m.vol||'unknown'}, Review Mentions ${m.mentions||'unknown'}`).join('\n')
+    : 'No items entered.';
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:900,
+      system:`You are PresageIQ conducting a Presage Audit for an existing KC business. Be direct, specific, and actionable. No generic advice. Reference the actual items provided.`,
+      messages:[{role:'user', content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ITEMS:\n${itemSummary}\n\nOWNER'S VIEW OF HIGHLIGHTS: ${document.getElementById('m-highlights').value||'Not provided'}\nKNOWN WEAK SPOTS: ${document.getElementById('m-weak').value||'Not provided'}\nPASTED REVIEWS: ${document.getElementById('m-reviews').value||'None provided'}\n\nAnalyze this menu. Structure:\n**STAR ITEMS** — what's working and should be featured more prominently\n**UNDERPERFORMERS** — items to fix, relaunch, or cut (be specific: which ones and why)\n**MISSING FROM MENU** — gaps based on reviews and neighborhood context\n**MARKETING PRIORITY** — the single highest-leverage change (what to push in ads/signage)\n**LAUNCH OPPORTUNITY** — one new item concept that fits this menu and fills a documented gap`}]
+    });
+    const text = data.content?.[0]?.text || '';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('menu');
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Analysis failed — check connection and try again.</span>'; }
+  btn.disabled = false;
+}
+
+async function scanMenuReddit() {
+  const btn = document.getElementById('menu-reddit-btn');
+  const result = document.getElementById('menu-result');
+  const body = document.getElementById('menu-result-body');
+  btn.disabled = true;
+  result.classList.add('visible');
+  const biz = document.getElementById('s-biz').value.trim();
+  const nbhd = document.getElementById('s-nbhd').value;
+  if(!biz) { body.innerHTML = '<span style="color:var(--warn);">Enter a business name in Client Setup first.</span>'; btn.disabled=false; return; }
+
+  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for mentions of ${biz}...</span>`;
+
+  const subs = ['kansascity','KCFoodScene'];
+  let allPosts = [];
+  for(const sub of subs) {
+    try {
+      const r = await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(biz + ' ' + nbhd)}&restrict_sr=1&sort=relevance&t=year&limit=10`,{headers:{'Accept':'application/json'}});
+      if(!r.ok) continue;
+      const d = await r.json();
+      (d?.data?.children||[]).forEach(c => allPosts.push({...c.data,sub}));
+    } catch(e){}
+  }
+  const seen = new Set();
+  allPosts = allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
+
+  if(allPosts.length === 0) {
+    body.innerHTML = `<span style="color:var(--text3);font-size:11px;">No Reddit posts found for "${biz}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.</span>`;
+  } else {
+    body.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;letter-spacing:.5px;">${allPosts.length} Reddit posts found for "${biz}"</div>` +
+      allPosts.map(p=>{
+        const age = timeAgo(p.created_utc);
+        const snippet = p.selftext ? p.selftext.substring(0,180)+'...' : '';
+        return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
+          <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
+          ${snippet?`<div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-style:italic;">${escHtml(snippet)}</div>`:''}
+          <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${age}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
+        </div>`;
+      }).join('');
+  }
+  btn.disabled = false;
+}
+
+async function analyzeReviews() {
+  const btn = document.getElementById('review-run-btn');
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const google = document.getElementById('r-google').value;
+  const yelp = document.getElementById('r-yelp').value;
+  const social = document.getElementById('r-social').value;
+  const allReviews = [google&&`GOOGLE REVIEWS:\n${google}`,yelp&&`YELP REVIEWS:\n${yelp}`,social&&`SOCIAL/OTHER:\n${social}`].filter(Boolean).join('\n\n');
+
+  if(!allReviews.trim()) { body.innerHTML='<span style="color:var(--warn);">Paste at least one source of reviews first.</span>'; btn.disabled=false; return; }
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:900,
+      system:`You are PresageIQ extracting market intelligence from customer reviews for a KC business audit. Be specific — quote or closely paraphrase actual review content. Identify patterns, not just individual comments.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nREVIEW SOURCES:\n${allReviews}\n\nExtract intelligence. Structure:\n**WHAT CUSTOMERS LOVE** — specific items, experiences, or qualities mentioned positively (with frequency)\n**COMMON COMPLAINTS** — recurring issues (service, quality, price, parking, etc.)\n**UNMET REQUESTS** — what customers ask for that doesn't exist yet\n**ITEM-LEVEL SIGNALS** — any specific menu items praised or criticized\n**SENTIMENT SUMMARY** — overall brand health signal (1-2 sentences)\n**PRIORITY ACTION** — the single most impactful thing to fix or capitalize on based on these reviews`}]
+    });
+    const text = data.content?.[0]?.text || '';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('reviews');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+async function scanRedditReviews() {
+  const btn = document.getElementById('review-reddit-btn');
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  const biz = document.getElementById('s-biz').value.trim();
+  if(!biz) { body.innerHTML='<span style="color:var(--warn);">Enter business name in Client Setup first.</span>'; btn.disabled=false; return; }
+  body.innerHTML=`<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>`;
+  await scanMenuReddit();
+  btn.disabled=false;
+}
+
+async function analyzeInventory() {
+  const btn = document.getElementById('inv-run-btn');
+  const result = document.getElementById('inv-result');
+  const body = document.getElementById('inv-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const vendorSummary = vendorItems.length > 0
+    ? vendorItems.map(v=>`- ${v.name}: Category ${v.cat||'unknown'}, Est. ${v.spend||'unknown'}/mo, Local: ${v.local||'unknown'}`).join('\n')
+    : 'No vendors entered.';
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:800,
+      system:`You are PresageIQ conducting a supply chain analysis for a KC business. Focus on consolidation opportunities, local sourcing in the KC/Missouri/Kansas region, and cost efficiency. Be specific and actionable.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCURRENT VENDORS:\n${vendorSummary}\n\nSOURCING PROBLEMS: ${document.getElementById('inv-problems').value||'None noted'}\nSOURCING WISHLIST: ${document.getElementById('inv-wish').value||'None noted'}\n\nAnalyze this supply chain. Structure:\n**CONSOLIDATION OPPORTUNITIES** — vendors that can be merged or eliminated\n**PRICING FLAGS** — areas where they're likely overpaying\n**LOCAL SOURCING GAPS** — KC/regional alternatives worth exploring (be specific about KC-area options where you know them)\n**QUICK WINS** — 2-3 changes that reduce cost or improve quality with low friction\n**STRATEGIC SHIFT** — one bigger supply chain move that could meaningfully improve operations`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('inventory');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled=false;
+}
+
+async function analyzeCompetitors() {
+  const btn = document.getElementById('comp-run-btn');
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:900,
+      system:`You are PresageIQ conducting a competitor gap analysis for a KC business audit. Be direct. The goal is to identify specific opportunities the client can act on — not general competitive awareness.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCOMPETITORS:\n${document.getElementById('comp-list').value||'Not provided'}\n\nWHAT COMPETITORS WIN ON: ${document.getElementById('comp-wins').value||'Not provided'}\nCOMPETITOR WEAKNESSES: ${document.getElementById('comp-gaps').value||'Not provided'}\n\nAnalyze the competitive landscape. Structure:\n**WHAT THEY'RE LOSING TO COMPETITORS** — specific areas where competitors outperform them\n**GAPS COMPETITORS LEAVE OPEN** — what nobody in this market is doing well that this business could own\n**STEAL THIS** — one specific item, experience, or strategy a competitor is winning on that this business should adapt and make their version of\n**POSITIONING RECOMMENDATION** — how this business should position against the competitive set\n**HIGHEST LEVERAGE MOVE** — the single competitive action with the most upside`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('competitors');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled=false;
+}
+
+async function scanCompetitorReddit() {
+  const btn = document.getElementById('comp-reddit-btn');
+  btn.disabled=true;
+  const compText = document.getElementById('comp-list').value;
+  const nbhd = document.getElementById('s-nbhd').value;
+  const firstComp = compText.split('\n')[0].replace(/^\d+\.\s*/,'').split('—')[0].trim();
+  if(!firstComp) { alert('Add at least one competitor first.'); btn.disabled=false; return; }
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  result.classList.add('visible');
+  body.innerHTML=`<div style="font-size:11px;color:var(--text3);">Scanning Reddit for competitor mentions...</div>`;
+  const subs=['kansascity','KCFoodScene'];
+  let allPosts=[];
+  for(const sub of subs){
+    try{
+      const r=await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(firstComp+' '+nbhd)}&restrict_sr=1&sort=relevance&t=year&limit=8`,{headers:{'Accept':'application/json'}});
+      if(!r.ok)continue;
+      const d=await r.json();
+      (d?.data?.children||[]).forEach(c=>allPosts.push({...c.data,sub}));
+    }catch(e){}
+  }
+  const seen=new Set();
+  allPosts=allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,6);
+  if(allPosts.length===0){body.innerHTML=`<span style="color:var(--text3);font-size:11px;">No posts found for "${firstComp}".</span>`;}
+  else{
+    body.innerHTML=`<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">Reddit mentions of "${firstComp}"</div>`+
+      allPosts.map(p=>`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:5px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
+        <div style="font-size:11px;color:var(--text);margin-bottom:3px;">${escHtml(p.title)}</div>
+        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span style="margin-left:auto;color:var(--teal);">↗</span></div>
+      </div>`).join('');
+  }
+  btn.disabled=false;
+}
+
+// =============================================
+// GENERATE PRESAGE BRIEF
+// =============================================
+async function generateBrief() {
+  const btn = document.getElementById('brief-run-btn');
+  const output = document.getElementById('brief-output');
+  btn.disabled = true;
+  output.innerHTML = '<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;padding:20px 0;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Generating Presage Brief Extended...</div>';
+
+  const menuResult = document.getElementById('menu-result-body').innerText;
+  const reviewResult = document.getElementById('review-result-body').innerText;
+  const invResult = document.getElementById('inv-result-body').innerText;
+  const compResult = document.getElementById('comp-result-body').innerText;
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:1500,
+      system:`You are PresageIQ writing a Presage Brief Extended — a professional business intelligence report delivered to a client after a full audit engagement. Write in a clear, authoritative, professional tone. This document will be sent directly to the client. Format it as a structured report. Use ** for bold headers.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ANALYSIS FINDINGS:\n${menuResult||'Not completed'}\n\nREVIEW SIGNAL FINDINGS:\n${reviewResult||'Not completed'}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR ANALYSIS FINDINGS:\n${compResult||'Not completed'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz').value||'Client Business'} · ${document.getElementById('s-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the overall state of this business and the single most important thing they need to do)\n\n**WHAT'S WORKING** (strengths to protect and amplify)\n\n**WHAT NEEDS TO CHANGE** (honest list of problems, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (specific item actions)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement — acknowledge the challenge, affirm the opportunity)\n\nBe specific. Reference actual data from the findings. This is a $2,500 deliverable — write accordingly.`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    output.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${
+      text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);font-size:13px;">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>')
+    }</div>`;
+    markDone('brief');
+  } catch(e) { output.innerHTML='<span style="color:var(--danger);">Brief generation failed — make sure all modules have been analyzed first.</span>'; }
+  btn.disabled=false;
+}
+
+function copyBrief() {
+  const text = document.getElementById('brief-output').innerText;
+  if(!text||text.includes('Complete all audit modules')) { alert('Generate the brief first.'); return; }
+  navigator.clipboard.writeText(text).then(()=>alert('Brief copied to clipboard.'));
+}
+
+function buildBrief() { showPanel('brief'); generateBrief(); }
+
+// =============================================
+// UTILS
+// =============================================
+function escHtml(str){if(!str)return'';return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function timeAgo(utc){const s=Math.floor(Date.now()/1000)-utc;if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
+
+// =============================================
+// MODE SWITCHING
+// =============================================
+let currentMode = 'audit';
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('mode-audit').classList.toggle('active', mode === 'audit');
+  document.getElementById('mode-consult').classList.toggle('active', mode === 'consult');
+  document.getElementById('audit-nav').style.display = mode === 'audit' ? 'block' : 'none';
+  document.getElementById('consult-nav').style.display = mode === 'consult' ? 'block' : 'none';
+  if(mode === 'audit') showPanel('setup');
+  if(mode === 'consult') showPanel('c-concept');
+}
+
+// =============================================
+// CONSULT MODULE TRACKING
+// =============================================
+const consultDone = { 'c-concept':false, 'c-market':false, 'c-community':false, 'c-financials':false, 'c-funding':false, 'c-report':false };
+
+function markConsultDone(id) {
+  consultDone[id] = true;
+  const el = document.getElementById('nav-'+id);
+  if(el) el.classList.add('done');
+}
+
+// =============================================
+// CONSULT CONTEXT
+// =============================================
+function getConsultContext() {
+  return `Client: ${document.getElementById('cc-client').value || 'Unknown'}
+Background: ${document.getElementById('cc-background').value || 'Unknown'}
+Investment Range: ${document.getElementById('cc-investment').value || 'Unknown'}
+Business Type: ${document.getElementById('cc-type').value || 'Unknown'}
+Target Neighborhood: ${document.getElementById('cc-nbhd').value || 'Unknown'}, Kansas City
+Target Avg Transaction: ${document.getElementById('cc-check').value || 'Unknown'}
+Concept: ${document.getElementById('cc-concept').value || 'Not provided'}
+Why this neighborhood: ${document.getElementById('cc-why').value || 'Not provided'}
+Biggest concern: ${document.getElementById('cc-concern').value || 'Not provided'}`;
+}
+
+// =============================================
+// CONSULT: MARKET ANALYSIS
+// =============================================
+async function runMarketAnalysis() {
+  const btn = document.getElementById('mkt-run-btn');
+  const body = document.getElementById('mkt-result-body');
+  btn.disabled = true;
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const concept = document.getElementById('cc-concept').value.trim();
+  const nbhd = document.getElementById('cc-nbhd').value;
+  if(!concept || !nbhd) {
+    body.innerHTML = '<span style="color:var(--warn);">Complete Concept Setup first — need at least the concept description and neighborhood.</span>';
+    btn.disabled = false; return;
+  }
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:900,
+      system:`You are PresageIQ conducting a pre-launch market viability analysis for a Kansas City business concept. Be direct and honest — a weak market signal is valuable information. Reference neighborhood-specific data where possible. Use ** for bold headers.`,
+      messages:[{role:'user', content:`${getConsultContext()}\n\nAnalyze market viability for this concept. Structure:\n\n**FIT SCORE: X/10** — one sentence verdict\n\n**WHAT THE MARKET SAYS IS WORKING FOR THIS** — demand signals, demographic alignment, neighborhood opportunity\n\n**WHAT WORKS AGAINST IT** — saturation, demographic mismatch, timing, or structural concerns\n\n**NEIGHBORHOOD VERDICT** — is ${nbhd} the right location? If not, name a better KC neighborhood and why\n\n**THE ONE THING THAT DETERMINES SUCCESS HERE** — the single factor that makes or breaks this concept in this market\n\nBe specific to Kansas City. Reference real neighborhood characteristics.`}]
+    });
+    const text = data.content?.[0]?.text || '';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markConsultDone('c-market');
+  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+// =============================================
+// CONSULT: REDDIT CONCEPT SCAN
+// =============================================
+async function runConceptReddit() {
+  const nbhd = document.getElementById('cc-nbhd').value;
+  const type = document.getElementById('cc-type').value;
+  const concept = document.getElementById('cc-concept').value;
+  const targetEl = document.getElementById('comm-result-body') || document.getElementById('mkt-result-body');
+  const result = document.getElementById('comm-result');
+  if(result) result.classList.add('visible');
+
+  if(!nbhd && !type) { if(targetEl) targetEl.innerHTML='<span style="color:var(--warn);">Enter neighborhood and business type in Concept Setup first.</span>'; return; }
+
+  const searchTerm = `${nbhd} ${type.split('—')[0].trim()}`.trim();
+  if(targetEl) targetEl.innerHTML = `<div style="font-size:11px;color:var(--text3);">Scanning Reddit for: "${searchTerm}"...</div>`;
+
+  const subs = ['kansascity','KCFoodScene','kansascitylocal'];
+  let allPosts = [];
+  for(const sub of subs) {
+    try {
+      const r = await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(searchTerm)}&restrict_sr=1&sort=relevance&t=year&limit=8`,{headers:{'Accept':'application/json'}});
+      if(!r.ok) continue;
+      const d = await r.json();
+      (d?.data?.children||[]).forEach(c => allPosts.push({...c.data,sub}));
+    } catch(e){}
+  }
+  const seen = new Set();
+  allPosts = allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
+
+  if(!targetEl) return;
+  if(allPosts.length === 0) {
+    targetEl.innerHTML = `<span style="color:var(--text3);font-size:11px;">No Reddit posts found for "${searchTerm}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.</span>`;
+    return;
+  }
+  targetEl.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;">${allPosts.length} community posts found for "${searchTerm}"</div>` +
+    allPosts.map(p=>{
+      const age = timeAgo(p.created_utc);
+      const snippet = p.selftext ? p.selftext.substring(0,160)+'...' : '';
+      return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
+        <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
+        ${snippet?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-bottom:4px;">${escHtml(snippet)}</div>`:''}
+        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${age}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
+      </div>`;
+    }).join('');
+  markConsultDone('c-community');
+}
+
+// =============================================
+// CONSULT: COMMUNITY ANALYSIS
+// =============================================
+async function runCommunityAnalysis() {
+  const btn = document.getElementById('comm-run-btn');
+  const result = document.getElementById('comm-result');
+  const body = document.getElementById('comm-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const pasted = document.getElementById('cc-community-paste').value;
+  if(!pasted.trim()) {
+    body.innerHTML = '<span style="color:var(--warn);">Paste community content above, or use the Reddit scan button to pull live posts.</span>';
+    btn.disabled = false; return;
+  }
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:700,
+      system:`You are PresageIQ extracting community intelligence relevant to a pre-launch business concept in Kansas City. Focus on signals that validate or challenge the concept.`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\nCOMMUNITY CONTENT:\n${pasted}\n\nExtract intelligence relevant to this concept. Structure:\n**DEMAND SIGNALS** — evidence locals want something like this\n**CAUTION SIGNALS** — evidence of market resistance, oversaturation, or failed precedents\n**DIRECT QUOTES OF NOTE** — 2-3 specific quotes that capture community sentiment most clearly\n**COMMUNITY VERDICT** — one sentence on what the community data says about this concept's viability`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markConsultDone('c-community');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+// =============================================
+// CONSULT: FINANCIAL PROJECTION
+// =============================================
+async function runFinancialProjection() {
+  const btn = document.getElementById('fin-run-btn');
+  const result = document.getElementById('fin-result');
+  const body = document.getElementById('fin-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const extraContext = `Square footage: ${document.getElementById('cf-sqft').value||'Unknown'}
+Seats/Capacity: ${document.getElementById('cf-seats').value||'Unknown'}
+Operating hours/week: ${document.getElementById('cf-hours').value||'Unknown'}
+Known costs: ${document.getElementById('cf-known').value||'None provided'}
+Revenue assumptions: ${document.getElementById('cf-revenue').value||'None provided'}`;
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:1000,
+      system:`You are PresageIQ generating a financial projection for a pre-launch KC business concept. Be realistic — not pessimistic, not optimistic. Use industry benchmarks for the business type and KC market conditions. Clearly state all assumptions. This is a planning tool, not a guarantee. Use ** for bold headers.
+
+IMPORTANT: At the end of your response, output exactly this format on separate lines:
+STARTUP_LOW: $XXX,XXX
+STARTUP_HIGH: $XXX,XXX
+REVENUE_EST: $XX,XXX/mo
+BREAKEVEN: XX months`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\n${extraContext}\n\nGenerate a full financial projection. Structure:\n\n**STARTUP COST BREAKDOWN**\nItemized estimate of startup costs — buildout/renovation, equipment, inventory, licenses/permits, deposits, working capital reserve, marketing. Give a realistic range (low/high).\n\n**MONTHLY REVENUE PROJECTION**\nBased on capacity, avg check, realistic covers/transactions per day, and KC market conditions. Show the math.\n\n**MONTHLY OPERATING COSTS**\nRent estimate for neighborhood, labor, COGS, utilities, insurance, misc. Give realistic ranges.\n\n**BREAK-EVEN ANALYSIS**\nMonths to cover monthly operating costs. Months to recoup total startup investment (payback period).\n\n**KEY ASSUMPTIONS**\nList the 4-5 most important assumptions driving these numbers.\n\n**FINANCIAL RISK FLAGS**\nThe 2-3 financial scenarios that could break this projection.`}]
+    });
+    let text = data.content?.[0]?.text||'';
+
+    // Extract projection cards
+    const startupLow = text.match(/STARTUP_LOW:\s*\$?([\d,]+)/)?.[1];
+    const startupHigh = text.match(/STARTUP_HIGH:\s*\$?([\d,]+)/)?.[1];
+    const revenueEst = text.match(/REVENUE_EST:\s*\$?([\d,]+\/mo)/)?.[1];
+    const breakeven = text.match(/BREAKEVEN:\s*(\d+\s*months?)/i)?.[1];
+
+    if(startupLow && startupHigh) {
+      document.getElementById('proj-startup').textContent = `$${startupLow}–$${startupHigh}`;
+      document.getElementById('proj-revenue').textContent = revenueEst ? `$${revenueEst}` : '—';
+      document.getElementById('proj-breakeven').textContent = breakeven || '—';
+      document.getElementById('proj-cards').style.display = 'grid';
+    }
+
+    // Clean extraction lines from display
+    text = text.replace(/STARTUP_LOW:[^\n]*/g,'').replace(/STARTUP_HIGH:[^\n]*/g,'').replace(/REVENUE_EST:[^\n]*/g,'').replace(/BREAKEVEN:[^\n]*/g,'').trim();
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markConsultDone('c-financials');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Projection failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+// =============================================
+// CONSULT: FUNDING PATHWAYS
+// =============================================
+async function runFundingAnalysis() {
+  const btn = document.getElementById('fund-run-btn');
+  const result = document.getElementById('fund-result');
+  const body = document.getElementById('fund-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:800,
+      system:`You are PresageIQ identifying funding pathways for a pre-launch KC business. Focus on realistic, accessible options based on the client's profile. Prioritize by likelihood of success. Include veteran-specific resources if applicable. Be specific — name actual programs, not just categories.`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\nIdentify the most relevant funding pathways for this client. Structure:\n\n**BEST FIT — PURSUE FIRST** — the 2-3 most realistic funding sources given their profile, investment range, and business type. Name specific programs.\n\n**VETERAN-SPECIFIC RESOURCES** — if applicable, specific VA, SBA veteran, or Missouri veteran programs they should explore immediately.\n\n**KC-SPECIFIC OPPORTUNITIES** — local KC grants, CDFI loans, neighborhood development funds, or programs specific to their target area.\n\n**REALISTIC FUNDING STACK** — how they might combine multiple sources to reach their startup cost target.\n\n**FIRST THREE CALLS TO MAKE** — the specific organizations to contact this week, in priority order.`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markConsultDone('c-funding');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+// =============================================
+// CONSULT: GENERATE REPORT
+// =============================================
+async function generateConsultReport() {
+  const btn = document.getElementById('crpt-run-btn');
+  const output = document.getElementById('consult-report-output');
+  btn.disabled = true;
+  output.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:20px 0;display:flex;align-items:center;gap:8px;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Generating Presage Consult Report...</div>';
+
+  const mktFindings = document.getElementById('mkt-result-body').innerText;
+  const commFindings = document.getElementById('comm-result-body').innerText;
+  const finFindings = document.getElementById('fin-result-body').innerText;
+  const fundFindings = document.getElementById('fund-result-body').innerText;
+  const startupRange = document.getElementById('proj-startup').textContent;
+  const revenueEst = document.getElementById('proj-revenue').textContent;
+  const breakeven = document.getElementById('proj-breakeven').textContent;
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:1600,
+      system:`You are PresageIQ writing a Presage Consult Report — a professional pre-launch intelligence report delivered to a client after a full concept analysis session. Write in a clear, authoritative, professional tone. This document will be shared with the client and potentially with investors or lenders. Use ** for bold headers.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getConsultContext()}\n\nMARKET VIABILITY FINDINGS:\n${mktFindings||'Not completed'}\n\nCOMMUNITY INTELLIGENCE:\n${commFindings||'Not completed'}\n\nFINANCIAL PROJECTION:\n${finFindings||'Not completed'}\nStartup Range: ${startupRange} | Monthly Revenue Est: ${revenueEst} | Break-Even: ${breakeven}\n\nFUNDING PATHWAYS:\n${fundFindings||'Not completed'}\n\nWrite the Presage Consult Report. Structure:\n\n**PRESAGE CONSULT REPORT**\n**${document.getElementById('cc-concept').value.substring(0,60)||'Business Concept'} · ${document.getElementById('cc-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (3 sentences — viability verdict, biggest opportunity, most critical risk)\n\n**MARKET VIABILITY** (what the data says about this concept in this market)\n\n**WHAT THE COMMUNITY IS TELLING US** (key signals from locals)\n\n**FINANCIAL SNAPSHOT**\n— Startup Cost Range: ${startupRange}\n— Monthly Revenue Estimate: ${revenueEst}\n— Break-Even Timeline: ${breakeven}\n(1 paragraph interpreting what these numbers mean for this client)\n\n**FUNDING PATHWAYS** (top 3 most relevant for this client)\n\n**PRIORITY ACTION PLAN**\n— This Week\n— Next 30 Days\n— 60-90 Days\n\n**CLOSING ASSESSMENT** (honest, direct, encouraging — acknowledge the risk, affirm the opportunity if it's real, be straight if it's not)\n\nThis is a $500 deliverable. Write accordingly.`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    output.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${
+      text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);font-size:13px;">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>')
+    }</div>`;
+    markConsultDone('c-report');
+  } catch(e) { output.innerHTML='<span style="color:var(--danger);">Report generation failed — complete the analysis modules first.</span>'; }
+  btn.disabled = false;
+}
+
+function copyConsultReport() {
+  const text = document.getElementById('consult-report-output').innerText;
+  if(!text || text.includes('Complete the concept modules')) { alert('Generate the report first.'); return; }
+  navigator.clipboard.writeText(text).then(()=>alert('Report copied to clipboard.'));
+}
+
+// =============================================
+// CLIENT QUEUE
+// =============================================
+let allClients = [];
+let queueFilter = 'all';
+
+async function loadClientQueue() {
+  const statusEl = document.getElementById('queue-status');
+  const listEl = document.getElementById('queue-list');
+  if (!statusEl) return;
+  statusEl.textContent = 'Loading...';
+  statusEl.style.display = 'block';
+  listEl.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/clients');
+    if (!resp.ok) throw new Error('fetch failed');
+    allClients = await resp.json();
+    renderQueueList();
+  } catch(e) {
+    statusEl.textContent = 'Failed to load clients. Make sure the server is running.';
+  }
+}
+
+function renderQueueList() {
+  const statusEl = document.getElementById('queue-status');
+  const listEl = document.getElementById('queue-list');
+  const filtered = queueFilter === 'all' ? allClients : allClients.filter(cl => cl.status === queueFilter);
+
+  if (filtered.length === 0) {
+    statusEl.textContent = allClients.length === 0
+      ? 'No clients yet. Submissions from Presage Consult appear here.'
+      : 'No clients match this filter.';
+    statusEl.style.display = 'block';
+    listEl.innerHTML = '';
+    return;
+  }
+  statusEl.style.display = 'none';
+
+  const statusColor = { pending: 'var(--warn)', active: 'var(--teal)', complete: 'var(--text3)' };
+  const serviceLabel = { consult: 'Presage Consult', audit: 'Presage Audit' };
+
+  listEl.innerHTML = filtered.map(cl => {
+    const date = new Date(cl.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    const svc = serviceLabel[cl.service] || cl.service || 'Unknown';
+    const nbhd = cl.neighborhood || 'Not specified';
+    const color = statusColor[cl.status] || 'var(--text3)';
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px 16px;" id="qrow-${cl.id}">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="font-size:13px;color:var(--text);font-weight:500;">${escHtml(cl.name)}</span>
+            <span style="font-size:9px;padding:2px 8px;border-radius:2px;border:1px solid ${color};color:${color};text-transform:uppercase;letter-spacing:.5px;">${cl.status}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${svc} &middot; ${nbhd} &middot; ${date}</div>
+          <div style="font-size:11px;color:var(--text3);">${escHtml(cl.email)}${cl.phone ? ' &middot; ' + escHtml(cl.phone) : ''}</div>
+          ${cl.concept ? `<div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5;border-left:2px solid var(--border2);padding-left:8px;">${escHtml(cl.concept.substring(0, 180))}${cl.concept.length > 180 ? '...' : ''}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+          <button onclick="loadClientIntoSession(${cl.id})" style="background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.3);color:var(--gold);padding:6px 12px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;white-space:nowrap;">Load Client &#8594;</button>
+          <select onchange="updateClientStatus(${cl.id}, this.value)" style="background:var(--bg4);border:1px solid var(--border2);color:var(--text2);padding:5px 8px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;">
+            <option value="pending" ${cl.status==='pending'?'selected':''}>Pending</option>
+            <option value="active" ${cl.status==='active'?'selected':''}>Active</option>
+            <option value="complete" ${cl.status==='complete'?'selected':''}>Complete</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterQueue(filter) {
+  queueFilter = filter;
+  ['all','pending','active','complete'].forEach(f => {
+    const btn = document.getElementById('qf-' + f);
+    if (!btn) return;
+    if (f === filter) {
+      btn.style.background = 'rgba(200,150,62,.1)';
+      btn.style.borderColor = 'rgba(200,150,62,.3)';
+      btn.style.color = 'var(--gold)';
+    } else {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+  renderQueueList();
+}
+
+async function updateClientStatus(id, status) {
+  try {
+    const resp = await fetch('/api/clients/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (!resp.ok) throw new Error();
+    const updated = await resp.json();
+    const idx = allClients.findIndex(cl => cl.id === id);
+    if (idx !== -1) allClients[idx] = updated;
+    renderQueueList();
+  } catch(e) {
+    alert('Failed to update status.');
+  }
+}
+
+function loadClientIntoSession(id) {
+  const cl = allClients.find(c => c.id === id);
+  if (!cl) return;
+
+  // Populate audit setup fields
+  const map = {
+    's-biz': cl.name,
+    's-nbhd': cl.neighborhood || '',
+    's-concept': cl.concept || '',
+    's-notes': cl.notes || ''
+  };
+  for (const [fieldId, value] of Object.entries(map)) {
+    const el = document.getElementById(fieldId);
+    if (el) el.value = value;
+  }
+
+  // Switch to appropriate mode and show setup panel
+  if (cl.service === 'consult') {
+    setMode('consult');
+    // Populate consult fields
+    const consultMap = {
+      'cc-client': cl.name,
+      'cc-nbhd': cl.neighborhood || '',
+      'cc-concept': cl.concept || '',
+      'cc-background': cl.notes || ''
+    };
+    for (const [fieldId, value] of Object.entries(consultMap)) {
+      const el = document.getElementById(fieldId);
+      if (el) el.value = value;
+    }
+    showPanel('c-concept');
+  } else {
+    setMode('audit');
+    showPanel('setup');
+  }
+
+  // Mark as active
+  updateClientStatus(id, 'active');
+
+  // Show confirmation
+  const pill = document.querySelector('.client-pill');
+  if (pill) pill.textContent = cl.name + ' · ' + (cl.service === 'consult' ? 'Consult' : 'Audit');
+}
+
+// =============================================
+// Init
+renderMenuItems();
+renderVendors();
+</script>
+</body>
+</html>

@@ -1,0 +1,2069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PresageIQ — Towns &amp; Walley Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0e1117;
+  --bg2:#161c24;
+  --bg3:#1c2330;
+  --border:rgba(255,255,255,0.07);
+  --border2:rgba(255,255,255,0.14);
+  --text:#eff2f5;
+  --text2:#8d9eb0;
+  --text3:#4a5d6e;
+  --accent:#e8a045;
+  --accent2:#5ba4cf;
+  --warn:#e3b341;
+  --danger:#f85149;
+  --success:#3fb950;
+  --purple:#a78bfa;
+  --font-display:'Syne',sans-serif;
+  --font-mono:'DM Mono',monospace;
+}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:14px;display:flex;flex-direction:column;}
+
+/* NOISE OVERLAY */
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.4;}
+
+/* TOPBAR */
+.topbar{
+  display:flex;align-items:center;gap:16px;
+  padding:0 20px;height:52px;flex-shrink:0;
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  position:relative;
+}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--accent),transparent 60%);}
+.logo{font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:-0.5px;color:var(--text);}
+.logo span{color:var(--accent);}
+.logo-sub{font-size:10px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:1px;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse-dot 2s infinite;}
+@keyframes pulse-dot{0%,100%{opacity:1;}50%{opacity:.4;}}
+.status-label{font-size:10px;color:var(--text2);letter-spacing:1px;}
+.tab-btn{background:none;border:1px solid var(--border);color:var(--text3);padding:5px 12px;border-radius:4px;font-family:var(--font-mono);font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s;text-transform:uppercase;}
+.tab-btn.active,.tab-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,170,.05);}
+.tab-btn.import-tab.active,.tab-btn.import-tab:hover{border-color:var(--accent2);color:var(--accent2);background:rgba(0,153,255,.05);}
+
+/* LAYOUT */
+.main{display:flex;flex:1;overflow:hidden;}
+
+/* SIDEBAR */
+.sidebar{
+  width:260px;flex-shrink:0;
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+.sidebar-header{padding:16px;border-bottom:1px solid var(--border);}
+.search-wrap{position:relative;}
+.search-wrap input{
+  width:100%;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);padding:8px 10px 8px 32px;
+  border-radius:4px;font-family:var(--font-mono);font-size:12px;
+  outline:none;transition:border .2s;
+}
+.search-wrap input:focus{border-color:var(--accent);}
+.search-wrap input::placeholder{color:var(--text3);}
+.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px;}
+.filter-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;}
+.chip{background:var(--bg3);border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .2s;letter-spacing:.5px;font-family:var(--font-mono);}
+.chip.active{background:rgba(0,212,170,.1);border-color:var(--accent);color:var(--accent);}
+.sidebar-list{flex:1;overflow-y:auto;padding:8px;}
+.sidebar-list::-webkit-scrollbar{width:3px;}
+.sidebar-list::-webkit-scrollbar-track{background:transparent;}
+.sidebar-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+.nbhd-item{
+  padding:10px 12px;border-radius:4px;cursor:pointer;
+  transition:all .2s;border:1px solid transparent;
+  margin-bottom:2px;
+}
+.nbhd-item:hover{background:var(--bg3);border-color:var(--border);}
+.nbhd-item.active{background:rgba(0,212,170,.06);border-color:rgba(0,212,170,.25);}
+.nbhd-name{font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;}
+.nbhd-meta{display:flex;align-items:center;justify-content:space-between;}
+.nbhd-region{font-size:10px;color:var(--text3);letter-spacing:.5px;}
+.score-badge{
+  font-size:10px;font-weight:500;padding:2px 6px;border-radius:3px;
+  font-family:var(--font-mono);
+}
+.score-high{background:rgba(0,212,170,.12);color:var(--accent);border:1px solid rgba(0,212,170,.25);}
+.score-med{background:rgba(245,166,35,.1);color:var(--warn);border:1px solid rgba(245,166,35,.2);}
+.score-low{background:rgba(74,90,106,.15);color:var(--text3);border:1px solid var(--border);}
+
+/* CONTENT */
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.content-inner{flex:1;overflow-y:auto;padding:24px;}
+.content-inner::-webkit-scrollbar{width:3px;}
+.content-inner::-webkit-scrollbar-track{background:transparent;}
+.content-inner::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* NEIGHBORHOOD HEADER */
+.nbhd-header{margin-bottom:20px;}
+.nbhd-title{font-family:var(--font-display);font-size:30px;font-weight:800;letter-spacing:-1px;margin-bottom:6px;}
+.nbhd-subtitle{color:var(--text2);font-size:12px;letter-spacing:1px;}
+.nbhd-tags{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.ntag{font-size:10px;padding:3px 8px;border-radius:3px;letter-spacing:.5px;font-family:var(--font-mono);}
+.ntag-opp{background:rgba(0,212,170,.1);color:var(--accent);border:1px solid rgba(0,212,170,.2);}
+.ntag-warn{background:rgba(245,166,35,.1);color:var(--warn);border:1px solid rgba(245,166,35,.2);}
+.ntag-info{background:rgba(0,153,255,.1);color:var(--accent2);border:1px solid rgba(0,153,255,.2);}
+.ntag-purple{background:rgba(139,92,246,.1);color:var(--purple);border:1px solid rgba(139,92,246,.2);}
+
+/* METRICS ROW */
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;}
+.metric-label{font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.metric-value{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text);}
+.metric-sub{font-size:11px;color:var(--text2);margin-top:4px;}
+
+/* DATA LAYERS */
+.section-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.layers-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px;}
+.layer-item{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;display:flex;align-items:center;gap:10px;}
+.layer-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.layer-active{background:var(--accent);box-shadow:0 0 6px var(--accent);}
+.layer-name{font-size:11px;color:var(--text2);}
+
+/* GAP CARDS */
+.gaps-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
+.gap-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px;transition:border .2s;}
+.gap-card:hover{border-color:var(--border2);}
+.gap-title{font-family:var(--font-display);font-size:14px;font-weight:700;margin-bottom:5px;}
+.gap-desc{font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6;}
+.bar-row{margin-bottom:6px;}
+.bar-label{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px;}
+.bar-track{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:2px;transition:width .6s ease;}
+.bar-demand{background:var(--accent);}
+.bar-sat{background:var(--warn);}
+.bar-via{background:var(--accent2);}
+
+/* RISK SIGNALS */
+.risks-row{display:flex;flex-direction:column;gap:6px;margin-bottom:20px;}
+.risk-item{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;flex-direction:column;cursor:pointer;transition:border .2s;}
+.risk-item:hover{border-color:var(--border2);}
+.risk-icon{font-size:12px;flex-shrink:0;margin-top:1px;}
+.risk-text{font-size:11px;color:var(--text2);line-height:1.5;}
+.risk-high .risk-icon{color:var(--danger);}
+.risk-med .risk-icon{color:var(--warn);}
+.risk-low .risk-icon{color:var(--success);}
+
+/* AI CHAT */
+.chat-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
+.chat-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--bg3);}
+.chat-header-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text2);}
+.chat-messages{height:200px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.chat-messages::-webkit-scrollbar{width:3px;}
+.chat-messages::-webkit-scrollbar-thumb{background:var(--border2);}
+.msg{max-width:85%;padding:10px 14px;border-radius:6px;font-size:13px;line-height:1.6;}
+.msg-ai{background:var(--bg3);border:1px solid var(--border);color:var(--text);align-self:flex-start;}
+.msg-ai .msg-label{font-size:9px;color:var(--accent);letter-spacing:1px;margin-bottom:4px;}
+.msg-user{background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.15);color:var(--text);align-self:flex-end;}
+.msg-typing{display:flex;gap:4px;align-items:center;padding:10px 12px;}
+.dot-t{width:4px;height:4px;border-radius:50%;background:var(--accent);animation:typing .8s infinite;}
+.dot-t:nth-child(2){animation-delay:.15s;}
+.dot-t:nth-child(3){animation-delay:.3s;}
+@keyframes typing{0%,100%{opacity:.3;}50%{opacity:1;}}
+.chat-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}
+.chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;}
+.chat-input:focus{border-color:var(--accent);}
+.chat-input::placeholder{color:var(--text3);}
+.chat-send{background:var(--accent);border:none;color:#000;padding:8px 14px;border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:500;cursor:pointer;transition:opacity .2s;letter-spacing:.5px;}
+.chat-send:hover{opacity:.85;}
+.chat-send:disabled{opacity:.4;cursor:not-allowed;}
+
+/* IMPORT PANEL */
+.import-panel{padding:24px;}
+.import-header{margin-bottom:20px;}
+.import-title{font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;}
+.import-desc{color:var(--text2);font-size:12px;line-height:1.6;max-width:600px;}
+.import-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+.import-field label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px;}
+.import-select,.import-input{
+  width:100%;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);padding:9px 12px;border-radius:4px;
+  font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;
+}
+.import-select:focus,.import-input:focus{border-color:var(--accent2);}
+.import-select option{background:var(--bg3);}
+.paste-zone{
+  width:100%;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);padding:12px;border-radius:4px;
+  font-family:var(--font-mono);font-size:12px;outline:none;
+  resize:vertical;min-height:140px;transition:border .2s;line-height:1.6;
+}
+.paste-zone:focus{border-color:var(--accent2);}
+.paste-zone::placeholder{color:var(--text3);}
+.import-actions{display:flex;gap:10px;margin-top:12px;}
+.btn-analyze{
+  background:var(--accent2);border:none;color:#fff;
+  padding:10px 20px;border-radius:4px;font-family:var(--font-mono);
+  font-size:11px;font-weight:500;cursor:pointer;transition:opacity .2s;letter-spacing:.5px;
+}
+.btn-analyze:hover{opacity:.85;}
+.btn-analyze:disabled{opacity:.4;cursor:not-allowed;}
+.btn-clear{
+  background:transparent;border:1px solid var(--border);color:var(--text3);
+  padding:10px 16px;border-radius:4px;font-family:var(--font-mono);
+  font-size:11px;cursor:pointer;transition:all .2s;letter-spacing:.5px;
+}
+.btn-clear:hover{border-color:var(--border2);color:var(--text);}
+.import-results{margin-top:20px;}
+.result-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px;}
+.result-header{padding:12px 14px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.result-label{font-size:10px;letter-spacing:1px;color:var(--accent2);text-transform:uppercase;}
+.result-nbhd{font-size:10px;color:var(--text3);}
+.result-body{padding:14px;font-size:12px;color:var(--text2);line-height:1.65;}
+.signal-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.signal-badge{font-size:10px;padding:3px 8px;border-radius:3px;letter-spacing:.5px;}
+.sig-gap{background:rgba(0,212,170,.1);color:var(--accent);border:1px solid rgba(0,212,170,.2);}
+.sig-demand{background:rgba(0,153,255,.1);color:var(--accent2);border:1px solid rgba(0,153,255,.2);}
+.sig-risk{background:rgba(255,71,87,.1);color:var(--danger);border:1px solid rgba(255,71,87,.2);}
+.sig-neutral{background:rgba(74,90,106,.15);color:var(--text3);border:1px solid var(--border);}
+
+/* IMPORT HISTORY */
+.import-history{margin-top:24px;}
+.history-item{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}
+.history-left{display:flex;flex-direction:column;gap:3px;}
+.history-title{font-size:11px;color:var(--text);}
+.history-meta{font-size:10px;color:var(--text3);}
+.history-score{font-size:10px;color:var(--accent);padding:2px 6px;background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.2);border-radius:3px;}
+
+/* EXPORT BTN */
+.export-btn{
+  background:transparent;border:1px solid var(--border);color:var(--text3);
+  padding:6px 14px;border-radius:4px;font-family:var(--font-mono);
+  font-size:10px;cursor:pointer;transition:all .2s;letter-spacing:.5px;
+}
+.export-btn:hover{border-color:var(--border2);color:var(--text);}
+
+/* EMPTY STATE */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);text-align:center;padding:40px;}
+.empty-icon{font-size:32px;margin-bottom:16px;opacity:.4;}
+.empty-title{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:8px;color:var(--text2);}
+.empty-desc{font-size:11px;line-height:1.6;max-width:300px;}
+
+/* ANIMATIONS */
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.fade-in{animation:fadeIn .3s ease forwards;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* API KEY MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:28px;width:420px;max-width:90vw;}
+.modal-title{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:6px;}
+.modal-desc{font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:16px;}
+.modal-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:4px;font-family:var(--font-mono);font-size:12px;outline:none;margin-bottom:12px;transition:border .2s;}
+.modal-input:focus{border-color:var(--accent);}
+.modal-input::placeholder{color:var(--text3);}
+.modal-actions{display:flex;gap:8px;}
+.modal-save{background:var(--accent);border:none;color:#000;padding:9px 18px;border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:500;cursor:pointer;transition:opacity .2s;}
+.modal-save:hover{opacity:.85;}
+.modal-skip{background:transparent;border:1px solid var(--border);color:var(--text3);padding:9px 14px;border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all .2s;}
+.modal-skip:hover{border-color:var(--border2);color:var(--text);}
+.api-status{display:flex;align-items:center;gap:5px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;transition:all .2s;}
+.api-status:hover{border-color:var(--border2);}
+.api-dot-active{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);}
+.api-dot-inactive{width:6px;height:6px;border-radius:50%;background:var(--danger);}
+
+/* REDDIT FEED */
+.reddit-feed{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
+.reddit-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);}
+.reddit-header-left{display:flex;align-items:center;gap:8px;}
+.reddit-title{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text2);}
+.reddit-sub-chips{display:flex;gap:4px;}
+.reddit-chip{font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer;border:1px solid var(--border);color:var(--text3);font-family:var(--font-mono);transition:all .2s;}
+.reddit-chip.active{border-color:rgba(255,69,0,.4);color:#ff4500;background:rgba(255,69,0,.08);}
+.reddit-refresh{background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:3px;font-family:var(--font-mono);font-size:9px;cursor:pointer;transition:all .2s;}
+.reddit-refresh:hover{border-color:var(--border2);color:var(--text);}
+.reddit-posts{max-height:220px;overflow-y:auto;padding:8px;}
+.reddit-post{padding:8px 10px;border-radius:4px;border:1px solid transparent;margin-bottom:4px;cursor:pointer;transition:all .2s;}
+.reddit-post:hover{background:var(--bg3);border-color:var(--border);}
+.reddit-post-title{font-size:11px;color:var(--text);margin-bottom:3px;line-height:1.4;}
+.reddit-post-meta{display:flex;gap:8px;font-size:9px;color:var(--text3);}
+.reddit-post-sub{color:#ff4500;}
+.reddit-loading{padding:20px;text-align:center;font-size:11px;color:var(--text3);}
+.reddit-import-btn{font-size:9px;padding:2px 6px;background:rgba(0,153,255,.1);border:1px solid rgba(0,153,255,.2);color:var(--accent2);border-radius:3px;cursor:pointer;margin-left:auto;font-family:var(--font-mono);white-space:nowrap;}
+
+/* NEIGHBORHOOD REDDIT FEED */
+.nbhd-reddit{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
+.nbhd-reddit-header{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);}
+.nbhd-reddit-label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text2);display:flex;align-items:center;gap:6px;}
+.nbhd-reddit-posts{max-height:210px;overflow-y:auto;padding:6px;}
+.nbhd-reddit-posts::-webkit-scrollbar{width:3px;}
+.nbhd-reddit-posts::-webkit-scrollbar-thumb{background:var(--border2);}
+.nbhd-reddit-post{padding:8px 10px;border-radius:3px;border:1px solid transparent;cursor:pointer;transition:all .2s;margin-bottom:3px;display:flex;flex-direction:column;gap:3px;}
+.nbhd-reddit-post:hover{background:var(--bg3);border-color:var(--border);}
+.nbhd-reddit-post-title{font-size:11px;color:var(--text);line-height:1.35;}
+.nbhd-reddit-post-meta{font-size:9px;color:var(--text3);display:flex;gap:10px;align-items:center;}
+.nbhd-reddit-import{font-size:9px;padding:2px 7px;background:rgba(0,153,255,.1);border:1px solid rgba(0,153,255,.2);color:var(--accent2);border-radius:3px;cursor:pointer;margin-left:auto;font-family:var(--font-mono);flex-shrink:0;}
+.nbhd-reddit-refresh{background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:3px;font-family:var(--font-mono);font-size:9px;cursor:pointer;transition:all .2s;}
+.nbhd-reddit-refresh:hover{border-color:var(--border2);color:var(--text);}
+.nbhd-reddit-loading{padding:16px;font-size:11px;color:var(--text3);text-align:center;}
+
+/* LOCALS PANEL */
+.locals-panel{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:20px;}
+.local-entry{padding:9px 0;border-bottom:1px solid var(--border);}
+.local-entry:last-child{border-bottom:none;padding-bottom:0;}
+.local-source-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.local-source-tag{font-size:9px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;}
+.local-sub-tag{font-size:9px;color:#ff4500;}
+.local-age{font-size:9px;color:var(--text3);}
+.local-score{font-size:9px;color:var(--text3);}
+.local-text{font-size:11px;color:var(--text2);line-height:1.5;}
+.local-strength{font-size:9px;padding:2px 6px;border-radius:3px;margin-top:5px;display:inline-block;}
+.local-high{background:rgba(0,212,170,.1);color:var(--accent);border:1px solid rgba(0,212,170,.2);}
+.local-med{background:rgba(245,166,35,.1);color:var(--warn);border:1px solid rgba(245,166,35,.2);}
+.local-low{background:rgba(74,90,106,.15);color:var(--text3);border:1px solid var(--border);}
+.locals-add-link{font-size:10px;color:var(--accent2);cursor:pointer;text-decoration:underline;margin-top:10px;display:inline-block;}
+.locals-empty{font-size:11px;color:var(--text3);padding:4px 0;}
+
+/* MAP TOGGLE BUTTON */
+.map-toggle-btn{background:transparent;border:1px solid var(--border);color:var(--text3);padding:5px 12px;border-radius:4px;font-family:var(--font-mono);font-size:10px;letter-spacing:1px;cursor:pointer;transition:all .2s;text-transform:uppercase;}
+.map-toggle-btn:hover,.map-toggle-btn.active{border-color:var(--purple);color:var(--purple);background:rgba(139,92,246,.05);}
+
+/* KEYWORD SEARCH */
+.kw-search-box{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:20px;}
+.kw-search-desc{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;}
+.kw-input-row{display:flex;gap:8px;margin-bottom:10px;}
+.kw-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;}
+.kw-input:focus{border-color:var(--accent);}
+.kw-input::placeholder{color:var(--text3);}
+.kw-btn{background:transparent;border:1px solid var(--accent);color:var(--accent);padding:8px 16px;border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all .2s;letter-spacing:.5px;white-space:nowrap;}
+.kw-btn:hover{background:rgba(232,160,69,.1);}
+.kw-btn:disabled{opacity:.5;cursor:not-allowed;}
+.kw-result-card{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;transition:all .2s;}
+.kw-result-card:hover{border-color:var(--border2);}
+.kw-result-title{font-size:11px;color:var(--text);line-height:1.35;margin-bottom:5px;}
+.kw-result-meta{display:flex;align-items:center;gap:10px;font-size:9px;color:var(--text3);}
+.kw-result-body{font-size:10px;color:var(--text3);line-height:1.4;margin-top:5px;font-style:italic;border-top:1px solid var(--border);padding-top:5px;}
+
+/* MAP VIEW */
+#map-view{flex:1;display:none;overflow:hidden;position:relative;flex-direction:column;}
+#presage-map{width:100%;height:100%;}
+.leaflet-container{background:#080c10;}
+.presage-popup .leaflet-popup-content-wrapper{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,.6);padding:0;}
+.presage-popup .leaflet-popup-tip-container{display:none;}
+.presage-popup .leaflet-popup-content{margin:0;font-family:var(--font-mono);}
+.map-info-bar{position:absolute;top:0;left:0;right:0;background:rgba(8,12,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:16px;z-index:400;pointer-events:none;}
+.map-info-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);}
+.map-info-stat{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;}
+.map-info-stat span{color:var(--text);}
+
+/* DRAG DROP ZONE */
+.drop-zone{border:2px dashed var(--border);border-radius:6px;padding:20px;text-align:center;transition:all .3s;cursor:pointer;margin-bottom:12px;position:relative;}
+.drop-zone.dragover{border-color:var(--accent2);background:rgba(0,153,255,.05);}
+.drop-zone-icon{font-size:24px;margin-bottom:8px;opacity:.4;}
+.drop-zone-text{font-size:11px;color:var(--text3);margin-bottom:4px;}
+.drop-zone-sub{font-size:10px;color:var(--text3);opacity:.6;}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+/* EXPANDABLE GAP CARD */
+.gap-card{cursor:pointer;}
+.gap-card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}
+.gap-expand-arrow{font-size:10px;color:var(--text3);transition:transform .25s;flex-shrink:0;margin-left:8px;margin-top:3px;}
+.gap-card.open .gap-expand-arrow{transform:rotate(180deg);}
+.gap-expanded{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+.gap-card.open .gap-expanded{display:block;}
+.gap-ai-btn{margin-top:8px;background:transparent;border:1px solid var(--accent);color:var(--accent);padding:4px 10px;border-radius:3px;font-family:var(--font-mono);font-size:9px;letter-spacing:.5px;cursor:pointer;transition:all .2s;text-transform:uppercase;}
+.gap-ai-btn:hover{background:rgba(0,212,170,.1);}
+
+/* EXPANDABLE RISK */
+.risk-item{cursor:pointer;}
+.risk-inner{display:flex;align-items:flex-start;gap:10px;width:100%;}
+.risk-expanded{display:none;padding-top:8px;margin-top:6px;border-top:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.7;padding-left:22px;}
+.risk-item.open .risk-expanded{display:block;}
+.risk-arrow{font-size:9px;color:var(--text3);white-space:nowrap;flex-shrink:0;margin-top:1px;}
+
+/* IDEA TESTER */
+.idea-tester{background:var(--bg2);border:1px solid rgba(139,92,246,.3);border-radius:6px;padding:14px;margin-bottom:20px;}
+.idea-desc{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;}
+.idea-input-row{display:flex;gap:8px;}
+.idea-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:4px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;}
+.idea-input:focus{border-color:var(--purple);}
+.idea-input::placeholder{color:var(--text3);}
+.idea-test-btn{background:var(--purple);border:none;color:#fff;padding:8px 14px;border-radius:4px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.5px;cursor:pointer;transition:opacity .2s;white-space:nowrap;}
+.idea-test-btn:hover{opacity:.85;}
+.idea-test-btn:disabled{opacity:.4;cursor:not-allowed;}
+.idea-result{margin-top:12px;font-size:12px;color:var(--text2);line-height:1.7;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;display:none;}
+
+/* CUSTOM KEYWORDS */
+.kw-box{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:20px;}
+.kw-desc{font-size:10px;color:var(--text3);margin-bottom:8px;}
+.kw-chips-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:18px;}
+.kw-chip{font-size:10px;padding:2px 8px;background:rgba(0,153,255,.1);border:1px solid rgba(0,153,255,.2);color:var(--accent2);border-radius:3px;cursor:pointer;transition:all .2s;}
+.kw-chip:hover{background:rgba(255,71,87,.1);border-color:rgba(255,71,87,.3);color:var(--danger);}
+.kw-add-row{display:flex;gap:6px;}
+.kw-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:3px;font-family:var(--font-mono);font-size:11px;outline:none;transition:border .2s;}
+.kw-input:focus{border-color:var(--accent2);}
+.kw-input::placeholder{color:var(--text3);}
+.kw-add-btn{background:transparent;border:1px solid var(--accent2);color:var(--accent2);padding:5px 10px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .2s;}
+.kw-add-btn:hover{background:rgba(0,153,255,.1);}
+
+/* IDEA TESTER HERO */
+.idea-tester-hero{
+  background:linear-gradient(135deg,rgba(167,139,250,.06),rgba(232,160,69,.04));
+  border:1px solid rgba(167,139,250,.25);
+  border-radius:8px;padding:20px;margin-bottom:20px;
+}
+.idea-hero-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--purple);margin-bottom:6px;}
+.idea-hero-sub{font-size:11px;color:var(--text2);line-height:1.55;margin-bottom:14px;max-width:680px;}
+.idea-hero-row{display:flex;gap:8px;}
+.idea-hero-input{
+  flex:1;background:var(--bg3);border:1px solid rgba(167,139,250,.3);
+  color:var(--text);padding:11px 14px;border-radius:5px;
+  font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;
+}
+.idea-hero-input:focus{border-color:var(--purple);box-shadow:0 0 0 2px rgba(167,139,250,.1);}
+.idea-hero-input::placeholder{color:var(--text3);}
+.idea-hero-btn{
+  background:var(--purple);border:none;color:#fff;
+  padding:11px 20px;border-radius:5px;font-family:var(--font-mono);
+  font-size:11px;font-weight:500;letter-spacing:.5px;cursor:pointer;
+  transition:opacity .2s;white-space:nowrap;
+}
+.idea-hero-btn:hover{opacity:.85;}
+.idea-hero-btn:disabled{opacity:.4;cursor:not-allowed;}
+.idea-hero-result{
+  margin-top:16px;font-size:12px;color:var(--text2);line-height:1.75;
+  padding:14px;background:var(--bg3);border:1px solid var(--border);
+  border-radius:5px;
+}
+
+/* CLEAN LOCAL QUOTES */
+.local-quote{padding:9px 0;border-bottom:1px solid var(--border);}
+.local-quote:last-child{border-bottom:none;padding-bottom:0;}
+.local-quote-bar{display:flex;align-items:stretch;gap:10px;}
+.local-quote-line{width:2px;background:var(--accent);border-radius:2px;flex-shrink:0;}
+.local-quote-line.import-line{background:var(--accent2);}
+.local-quote-body{display:flex;flex-direction:column;gap:3px;}
+.local-quote-text{font-size:12px;color:var(--text);line-height:1.5;}
+.local-quote-source{font-size:9px;color:var(--text3);letter-spacing:.5px;}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div>
+    <div class="logo">Presage<span>IQ</span></div>
+    <div class="logo-sub">Towns &amp; Walley Intelligence · v2.0</div>
+  </div>
+  <div class="topbar-right">
+    <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMapView()">◎ Map View</button>
+    <div class="api-status" onclick="showApiModal()" id="api-status-btn" title="AI runs via secure proxy. Click to add backup key.">
+      <div class="api-dot-active" id="api-dot"></div>
+      <span id="api-status-label">AI Active · Proxy</span>
+    </div>
+    <button class="export-btn" onclick="alert('PDF export — Phase 3 feature')">Export Report</button>
+  </div>
+</div>
+
+<!-- API KEY MODAL -->
+<div class="modal-overlay" id="api-modal">
+  <div class="modal-box">
+    <div class="modal-title">Personal API Key (Backup)</div>
+    <div class="modal-desc">PresageIQ AI runs through a secure proxy — no key needed for normal use. If the shared service is at capacity or you've hit the session limit, add your personal <strong style="color:var(--accent)">Anthropic API key</strong> here. It routes through our server for this session only and is never stored or logged. Get a key at <span style="color:var(--accent)">console.anthropic.com/settings/keys</span>.</div>
+    <input class="modal-input" type="password" id="api-key-input" placeholder="sk-..." autocomplete="off"/>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:14px;">Session only — resets when you close the tab. Your key is used server-side for each request, never exposed in the browser.</div>
+    <div class="modal-actions">
+      <button class="modal-save" onclick="saveApiKey()">Save & Activate</button>
+      <button class="modal-skip" onclick="closeApiModal()">Skip for Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="search-input" placeholder="Search neighborhoods..." oninput="filterNeighborhoods()"/>
+      </div>
+      <div class="filter-chips">
+        <div class="chip active" onclick="setFilter('all',this)">All</div>
+        <div class="chip" onclick="setFilter('high',this)">High Opp</div>
+        <div class="chip" onclick="setFilter('north',this)">North</div>
+        <div class="chip" onclick="setFilter('south',this)">South</div>
+        <div class="chip" onclick="setFilter('east',this)">East</div>
+        <div class="chip" onclick="setFilter('west',this)">West/JoCo</div>
+      </div>
+    </div>
+    <div class="sidebar-list" id="sidebar-list"></div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+
+<!-- DASHBOARD VIEW -->
+    <div id="dashboard-view" class="content-inner">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">◎</div>
+        <div class="empty-title">Select a Neighborhood</div>
+        <div class="empty-desc">Choose a neighborhood from the sidebar to view full market intelligence analysis, opportunity gaps, and AI analyst.</div>
+      </div>
+      <div id="nbhd-content" style="display:none;"></div>
+    </div>
+
+    <!-- MAP VIEW -->
+    <div id="map-view">
+      <div class="map-info-bar">
+        <div class="map-info-label">PresageIQ · KC Metro</div>
+        <div class="map-info-stat">◎ <span id="map-nbhd-count">26</span> neighborhoods mapped</div>
+        <div class="map-info-stat"><span style="color:var(--accent);">■</span> High &nbsp;<span style="color:var(--warn);">■</span> Medium &nbsp;<span style="color:var(--text3);">■</span> Lower opportunity</div>
+        <div class="map-info-stat" style="margin-left:auto;font-size:9px;color:var(--text3);">Click any marker to view analysis</div>
+      </div>
+      <div id="presage-map"></div>
+    </div>
+
+    <!-- IMPORT VIEW -->
+    <div id="import-view" style="display:none;" class="content-inner">
+      <div class="import-panel">
+        <div class="import-header">
+          <div class="import-title">Import Signal Data</div>
+          <div class="import-desc">Paste raw text from any source — Facebook groups, Nextdoor, Reddit, Google Reviews, Instagram captions, TikTok comments, YouTube descriptions, or any community content. PresageIQ extracts market gap signals and maps them to neighborhood opportunity analysis. All content is moderated before reaching customer-facing output.</div>
+        </div>
+
+        <div class="import-grid">
+          <div class="import-field">
+            <label>Target Neighborhood</label>
+            <select class="import-select" id="import-nbhd">
+              <option value="">— Select neighborhood —</option>
+            </select>
+          </div>
+          <div class="import-field">
+            <label>Source Type</label>
+            <select class="import-select" id="import-source">
+              <optgroup label="Community">
+                <option value="facebook">Facebook Group</option>
+                <option value="nextdoor">Nextdoor</option>
+                <option value="reddit">Reddit</option>
+                <option value="forum">Neighborhood Forum</option>
+              </optgroup>
+              <optgroup label="Reviews">
+                <option value="google_reviews">Google Reviews</option>
+                <option value="yelp">Yelp Reviews</option>
+              </optgroup>
+              <optgroup label="Social Media">
+                <option value="instagram">Instagram (paste caption/comments)</option>
+                <option value="tiktok">TikTok (paste comments/caption)</option>
+                <option value="youtube">YouTube (paste description/comments)</option>
+              </optgroup>
+              <optgroup label="Other">
+                <option value="other">Other / Unknown</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <div class="import-field" style="margin-bottom:12px;">
+          <label>Paste or Drop Text</label>
+          <div class="drop-zone" id="drop-zone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+            <div class="drop-zone-icon">⬇</div>
+            <div class="drop-zone-text">Drop a .txt file here</div>
+            <div class="drop-zone-sub">or paste text below</div>
+            <input type="file" accept=".txt,.md" onchange="handleFileSelect(event)"/>
+          </div>
+          <textarea class="paste-zone" id="import-text" placeholder="Paste any community text here — Facebook posts, Nextdoor threads, Google Reviews, Instagram captions, TikTok comments, YouTube descriptions...
+
+Examples of high-signal content:
+• 'Does anyone know where I can find a good Ethiopian restaurant in this area?'
+• 'We really need a hardware store that isn't 20 minutes away'
+• 'The old bakery on Wornall closed and there's nothing nearby now'
+• Google review: 'Love this area but there's nowhere to get a good breakfast'
+• Instagram caption: 'So sad the only coffee shop on Oak Street closed 😭'
+• TikTok comment: 'this neighborhood really needs a late night food spot'"></textarea>
+        </div>
+
+        <div class="import-actions">
+          <button class="btn-analyze" id="analyze-btn" onclick="analyzeImport()">Analyze Signal</button>
+          <button class="btn-clear" onclick="clearImport()">Clear</button>
+        </div>
+
+        <div class="import-results" id="import-results"></div>
+
+        <div class="import-history" id="import-history" style="display:none;">
+          <div class="section-label" style="margin-bottom:12px;">Import History — This Session</div>
+          <div id="history-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// =============================================
+// API KEY MANAGER + SESSION BUDGET
+// =============================================
+let API_KEY = '';
+
+// Stable Vercel production endpoint — all AI calls route through here
+const PROXY_URL = '/api/chat'; // Self-hosted endpoint
+
+// Client-side session budget — soft guardrail against accidental overuse
+// Hard rate limit lives in the proxy; this gives a graceful UX before hitting it
+const SESSION_LIMIT = 12;
+let sessionCalls = 0;
+
+function showApiModal(){
+  document.getElementById('api-modal').style.display = 'flex';
+  document.getElementById('api-key-input').focus();
+}
+
+function closeApiModal(){
+  document.getElementById('api-modal').style.display = 'none';
+}
+
+function saveApiKey(){
+  const key = document.getElementById('api-key-input').value.trim();
+  if(!key){ alert('Please enter an API key.'); return; }
+  // Accept OpenAI keys (sk-...) or legacy Anthropic keys (sk-ant-...)
+  if(!key.startsWith('sk-')){
+    alert('That doesn\'t look like a valid API key. OpenAI keys start with sk-');
+    return;
+  }
+  API_KEY = key;
+  sessionCalls = 0; // Reset budget when user provides their own key
+  document.getElementById('api-dot').className = 'api-dot-active';
+  document.getElementById('api-status-label').textContent = 'API Active · Personal Key';
+  closeApiModal();
+}
+
+async function callAI(body){
+  // Session budget check — warn before the proxy hard-limits
+  if(!API_KEY && sessionCalls >= SESSION_LIMIT){
+    throw new Error('SESSION_LIMIT');
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  // x-override-key routes user's personal key through proxy server-side (no CORS)
+  if(API_KEY) headers['x-override-key'] = API_KEY;
+
+  try {
+    const resp = await fetch(PROXY_URL, { method:'POST', headers, body: JSON.stringify(body) });
+    const data = await resp.json();
+
+    if(!resp.ok){
+      const code = data?.code || '';
+      if(code === 'CREDITS' || data?.error?.message?.includes('quota')) throw new Error('CREDITS');
+      if(code === 'RATE_LIMITED') throw new Error('RATE_LIMITED');
+      if(code === 'NO_KEY') throw new Error('NO_KEY');
+      throw new Error('API_ERROR');
+    }
+    sessionCalls++;
+    return data;
+  } catch(e) {
+    const known = ['CREDITS','RATE_LIMITED','NO_KEY','API_ERROR','SESSION_LIMIT','NETWORK'];
+    if(known.includes(e.message)) throw e;
+    throw new Error('NETWORK');
+  }
+}
+
+// =============================================
+// CONTENT MODERATION
+// =============================================
+// Graphic violence / crime → block from customer-facing display
+const MOD_BLOCK = [
+  'shooting','was shot','shots fired','shot and killed','shot dead','gunfire','gunshot',
+  'stabbed to death','stabbing victim','murdered','murder victim','homicide','found dead',
+  'body found','sexual assault','rape','carjacked at gunpoint','robbed at gunpoint',
+  'attacked and killed','bystander shot'
+];
+// Safety/crime context → show with internal flag only (useful for analyst, not Locals panel)
+const MOD_FLAG = [
+  'crime rate','break-in','burglary','car broken into','theft','drug activity',
+  'homeless encampment','safety concern','neighborhood watch','vandalism','graffiti'
+];
+
+function moderatePost(title, body=''){
+  const text = (title+' '+(body||'')).toLowerCase();
+  if(MOD_BLOCK.some(k => text.includes(k))){
+    return 'block'; // Don't display
+  }
+  if(MOD_FLAG.some(k => text.includes(k))){
+    return 'flag';  // Internal signal only — not shown in Locals panel
+  }
+  return 'ok';
+}
+
+// =============================================
+// REDDIT FEED
+// =============================================
+let activeRedditSub = 'kansascity';
+let redditOpen = true;
+
+function toggleReddit(){
+  redditOpen = !redditOpen;
+  const panel = document.getElementById('reddit-panel');
+  const icon = document.getElementById('reddit-toggle-icon');
+  panel.style.maxHeight = redditOpen ? '180px' : '0px';
+  icon.textContent = redditOpen ? '▲' : '▼';
+}
+
+function setRedditSub(sub, el){
+  activeRedditSub = sub;
+  document.querySelectorAll('.reddit-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  loadReddit();
+}
+
+async function loadReddit(){
+  const container = document.getElementById('reddit-posts');
+  container.innerHTML = '<div class="reddit-loading">Fetching posts...</div>';
+  try {
+    const resp = await fetch(`https://www.reddit.com/r/${activeRedditSub}/new.json?limit=15`,{
+      headers:{'Accept':'application/json'}
+    });
+    const data = await resp.json();
+    const posts = data?.data?.children || [];
+    if(posts.length === 0){
+      container.innerHTML = '<div class="reddit-loading">No posts found.</div>';
+      return;
+    }
+    container.innerHTML = posts.map(p=>{
+      const post = p.data;
+      const age = timeAgo(post.created_utc);
+      const score = post.score > 999 ? (post.score/1000).toFixed(1)+'k' : post.score;
+      return `
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;min-width:200px;max-width:240px;flex-shrink:0;cursor:pointer;transition:border .2s;" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="font-size:10px;color:var(--text);line-height:1.3;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(post.title)}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;gap:6px;font-size:9px;color:var(--text3);">
+              <span style="color:#ff4500;">r/${activeRedditSub}</span>
+              <span>↑${score}</span>
+              <span>${age}</span>
+            </div>
+            <button class="reddit-import-btn" onclick="importFromReddit('${escapeAttr(post.title)}','${escapeAttr(post.selftext||'')}')">Import</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    container.innerHTML = `<div class="reddit-loading" style="color:var(--danger);">Failed to load. Reddit may be blocking the request — try refreshing.</div>`;
+  }
+}
+
+function importFromReddit(title, body){
+  const text = body ? `${title}\n\n${body}` : title;
+  document.getElementById('import-text').value = text;
+  document.getElementById('import-source').value = 'reddit';
+  switchView('import', document.querySelector('.tab-btn.import-tab'));
+}
+
+function timeAgo(utc){
+  const sec = Math.floor(Date.now()/1000) - utc;
+  if(sec < 3600) return Math.floor(sec/60)+'m ago';
+  if(sec < 86400) return Math.floor(sec/3600)+'h ago';
+  return Math.floor(sec/86400)+'d ago';
+}
+
+function escapeHtml(str){
+  if(!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escapeAttr(str){
+  if(!str) return '';
+  return str.replace(/'/g,"\\'").replace(/\n/g,' ').substring(0,200);
+}
+
+// =============================================
+// NEIGHBORHOOD REDDIT FEED
+// =============================================
+const redditCache = {};
+const customKeywords = {};      // { [nbhdId]: ['keyword1', 'keyword2'] }
+const gapAnalysisCache = {};    // { 'nbhdId-gapIdx': htmlString }
+const riskAnalysisCache = {};   // { 'nbhdId-riskIdx': htmlString }
+
+function getNeighborhoodSearchTerm(n) {
+  const overrides = {
+    'kck':          'KCK wyandotte',
+    'eastside':     'east side prospect',
+    'river-market': 'river market',
+    'overland-park':'overland park',
+    'lees-summit':  "lee's summit",
+    'blue-springs': 'blue springs',
+    'platte-city':  'platte city',
+    'martin-city':  'martin city',
+    'hyde-park':    'hyde park',
+    'northkc':      'north kansas city',
+    'crossroads':   'crossroads arts district'
+  };
+  const base = overrides[n.id] || n.name.split(' /')[0];
+  const extras = (customKeywords[n.id] || []).join(' ');
+  return extras ? `${base} ${extras}` : base;
+}
+
+async function loadNeighborhoodReddit(id, force=false) {
+  const n = NEIGHBORHOODS.find(x => x.id === id);
+  if(!n) return;
+  const container = document.getElementById(`nbhd-reddit-posts-${id}`);
+  if(!container) return;
+
+  // Serve from cache if < 5 minutes old (bypass if force-refresh)
+  if(!force && redditCache[id] && Date.now() - redditCache[id].ts < 300000) {
+    renderNeighborhoodRedditPosts(id, redditCache[id].posts);
+    renderLocalsPanel(id, redditCache[id].posts);
+    return;
+  }
+
+  container.innerHTML = '<div class="nbhd-reddit-loading">Fetching local signal...</div>';
+
+  const term = getNeighborhoodSearchTerm(n);
+  const subs = ['kansascity', 'KCFoodScene'];
+  let allPosts = [];
+
+  try {
+    const results = await Promise.allSettled(subs.map(sub =>
+      fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(term)}&restrict_sr=1&sort=relevance&t=month&limit=8`, {
+        headers: { 'Accept': 'application/json' }
+      }).then(r => r.json())
+    ));
+
+    results.forEach((result, i) => {
+      if(result.status === 'fulfilled') {
+        const posts = result.value?.data?.children || [];
+        posts.forEach(p => allPosts.push({ ...p.data, sub: subs[i] }));
+      }
+    });
+
+    // Deduplicate + sort by score
+    const seen = new Set();
+    allPosts = allPosts
+      .filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12);
+
+    redditCache[id] = { posts: allPosts, ts: Date.now() };
+    renderNeighborhoodRedditPosts(id, allPosts);
+    renderLocalsPanel(id, allPosts);
+
+  } catch(e) {
+    if(container) container.innerHTML = `<div class="nbhd-reddit-loading" style="color:var(--danger);">Reddit unavailable. <span style="cursor:pointer;text-decoration:underline;" onclick="loadNeighborhoodReddit('${id}')">Try again</span></div>`;
+    renderLocalsPanel(id, []);
+  }
+}
+
+function renderNeighborhoodRedditPosts(id, posts) {
+  const container = document.getElementById(`nbhd-reddit-posts-${id}`);
+  if(!container) return;
+  if(!posts || posts.length === 0) {
+    container.innerHTML = `<div class="nbhd-reddit-loading">No recent posts found for this area.</div>`;
+    return;
+  }
+  container.innerHTML = posts.map(p => {
+    const mod = moderatePost(p.title, p.selftext||'');
+    if(mod === 'block') return ''; // Drop graphic violence/crime — not customer-facing
+    // For r/kansascity posts (not KCFoodScene), require the neighborhood name in title for relevance
+    if(p.sub === 'kansascity') {
+      const n = NEIGHBORHOODS.find(x => x.id === id);
+      const term = n ? n.name.split(' /')[0].toLowerCase() : '';
+      if(term && !p.title.toLowerCase().includes(term)) return '';
+    }
+    const age = timeAgo(p.created_utc);
+    const score = p.score > 999 ? (p.score/1000).toFixed(1)+'k' : p.score;
+    const flagBadge = mod === 'flag'
+      ? `<span style="font-size:8px;color:var(--warn);background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);padding:1px 5px;border-radius:2px;flex-shrink:0;">analyst only</span>`
+      : '';
+    return `
+      <div class="nbhd-reddit-post">
+        <div class="nbhd-reddit-post-title">${escapeHtml(p.title)}</div>
+        <div class="nbhd-reddit-post-meta">
+          <span style="color:#ff4500;">r/${p.sub}</span>
+          <span>↑${score}</span>
+          <span>${age}</span>
+          ${flagBadge}
+          ${mod === 'ok' ? `<button class="nbhd-reddit-import" onclick="importFromReddit('${escapeAttr(p.title)}','${escapeAttr(p.selftext||'')}')">Import →</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderLocalsPanel(id, redditPosts) {
+  const panel = document.getElementById(`locals-panel-${id}`);
+  if(!panel) return;
+
+  const n = NEIGHBORHOODS.find(x => x.id === id);
+  const nbhdName = n ? n.name : '';
+
+  // Only KCFoodScene posts that passed moderation — cleaner, more relevant signal
+  const topReddit = (redditPosts || [])
+    .filter(p => p.sub === 'KCFoodScene' && moderatePost(p.title, p.selftext||'') === 'ok')
+    .slice(0, 4);
+
+  // Session imports matching this neighborhood
+  const nbhdImports = importHistory.filter(h =>
+    h.nbhd && nbhdName && (
+      h.nbhd.toLowerCase().includes(nbhdName.toLowerCase()) ||
+      nbhdName.toLowerCase().includes(h.nbhd.toLowerCase())
+    )
+  ).slice().reverse().slice(0, 3);
+
+  if(topReddit.length === 0 && nbhdImports.length === 0) {
+    panel.innerHTML = `
+      <div class="locals-empty">No community signals collected yet for ${nbhdName}. Import reviews, social posts, or community content to build this panel.</div>
+      <span class="locals-add-link" onclick="switchView('import')">+ Import signal →</span>`;
+    return;
+  }
+
+  let html = '';
+
+  topReddit.forEach(p => {
+    html += `
+      <div class="local-quote">
+        <div class="local-quote-bar">
+          <div class="local-quote-line"></div>
+          <div class="local-quote-body">
+            <div class="local-quote-text">${escapeHtml(p.title)}</div>
+            <div class="local-quote-source">r/KCFoodScene · ${timeAgo(p.created_utc)}</div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  nbhdImports.forEach(h => {
+    const snippet = escapeHtml(h.summary.substring(0, 130)) + (h.summary.length > 130 ? '…' : '');
+    html += `
+      <div class="local-quote">
+        <div class="local-quote-bar">
+          <div class="local-quote-line import-line"></div>
+          <div class="local-quote-body">
+            <div class="local-quote-text">${snippet}</div>
+            <div class="local-quote-source">Imported · ${h.source} · ${h.timestamp}</div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  html += `<span class="locals-add-link" style="display:inline-block;margin-top:10px;" onclick="switchView('import')">+ Add signal for ${nbhdName} →</span>`;
+  panel.innerHTML = html;
+}
+
+// =============================================
+// DRAG & DROP FILE IMPORT
+// =============================================
+function handleDragOver(e){
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('dragover');
+}
+
+function handleDragLeave(e){
+  document.getElementById('drop-zone').classList.remove('dragover');
+}
+
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if(file) readFile(file);
+}
+
+function handleFileSelect(e){
+  const file = e.target.files[0];
+  if(file) readFile(file);
+}
+
+function readFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('import-text').value = e.target.result;
+  };
+  reader.readAsText(file);
+}
+
+
+// =============================================
+// NEIGHBORHOOD COORDINATES (KC Metro)
+// =============================================
+const COORDS = {
+  'waldo':         [38.9700, -94.5930],
+  'crossroads':    [39.0850, -94.5730],
+  'kck':           [39.1140, -94.6270],
+  'argentine':     [39.0780, -94.6580],
+  'eastside':      [39.0850, -94.5420],
+  'brookside':     [38.9800, -94.5880],
+  'westport':      [39.0450, -94.5900],
+  'plaza':         [39.0380, -94.5950],
+  'midtown':       [39.0600, -94.5780],
+  'northkc':       [39.1450, -94.5670],
+  'river-market':  [39.1100, -94.5810],
+  'liberty':       [39.2480, -94.4190],
+  'independence':  [39.0917, -94.4138],
+  'lees-summit':   [38.9108, -94.3822],
+  'overland-park': [38.9822, -94.6708],
+  'merriam':       [38.9833, -94.7000],
+  'raytown':       [38.9550, -94.4600],
+  'gladstone':     [39.2050, -94.5590],
+  'platte-city':   [39.3750, -94.7810],
+  'martin-city':   [38.9040, -94.5640],
+  'hyde-park':     [39.0550, -94.5530],
+  'volker':        [39.0530, -94.5850],
+  'blue-springs':  [39.0170, -94.2820],
+  'grandview':     [38.8858, -94.5330],
+  'olathe':        [38.8814, -94.8191],
+  'shawnee':       [38.9847, -94.7146]
+};
+
+// =============================================
+// MAP
+// =============================================
+let mapInstance = null;
+
+function initMap(){
+  const mapEl = document.getElementById('presage-map');
+  if(mapInstance){
+    mapInstance.invalidateSize();
+    return;
+  }
+  mapInstance = L.map(mapEl, {
+    center: [39.0997, -94.5786],
+    zoom: 10,
+    zoomControl: false,
+    attributionControl: true
+  });
+
+  L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> © <a href="https://carto.com">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(mapInstance);
+
+  NEIGHBORHOODS.forEach(n => {
+    const coords = COORDS[n.id];
+    if(!coords) return;
+    const color = n.score >= 80 ? '#00d4aa' : n.score >= 65 ? '#f5a623' : '#4a5a6a';
+    const glowColor = n.score >= 80 ? 'rgba(0,212,170,0.25)' : n.score >= 65 ? 'rgba(245,166,35,0.2)' : 'rgba(74,90,106,0.15)';
+    const radius = 7 + (n.score - 50) * 0.35;
+
+    // Outer glow ring
+    L.circleMarker(coords, {
+      radius: radius + 5,
+      fillColor: glowColor,
+      color: 'transparent',
+      fillOpacity: 1
+    }).addTo(mapInstance);
+
+    // Core marker
+    const marker = L.circleMarker(coords, {
+      radius,
+      fillColor: color,
+      color: color,
+      weight: 1.5,
+      opacity: 1,
+      fillOpacity: 0.3
+    }).addTo(mapInstance);
+
+    const popupContent = `
+      <div style="padding:12px 14px;min-width:170px;">
+        <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#e8edf2;margin-bottom:2px;">${n.name}</div>
+        <div style="font-size:10px;color:#8a9ab0;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase;">${n.region} KC Metro</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:10px;color:#4a5a6a;">Opp. Score</span>
+          <span style="font-size:11px;color:${color};font-weight:500;">${n.score}/100</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:10px;color:#4a5a6a;">Population</span>
+          <span style="font-size:11px;color:#8a9ab0;">${n.pop}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+          <span style="font-size:10px;color:#4a5a6a;">Med. Income</span>
+          <span style="font-size:11px;color:#8a9ab0;">${n.income}</span>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,0.07);margin-bottom:10px;"></div>
+        <div style="font-size:10px;color:#4a5a6a;margin-bottom:6px;">Top gap signal</div>
+        <div style="font-size:11px;color:#e8edf2;margin-bottom:12px;">${n.gaps[0].title}</div>
+        <button onclick="selectFromMap('${n.id}')" style="width:100%;background:#00d4aa;border:none;color:#000;padding:7px;border-radius:3px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;cursor:pointer;letter-spacing:.5px;">VIEW FULL ANALYSIS →</button>
+      </div>`;
+
+    marker.bindPopup(popupContent, {
+      className: 'presage-popup',
+      closeButton: false,
+      offset: [0, -4]
+    });
+
+    marker.on('mouseover', function(){ this.openPopup(); });
+    marker.on('click', function(){ selectFromMap(n.id); });
+  });
+}
+
+function selectFromMap(id){
+  const dashBtn = document.querySelector('.tab-btn:not(.import-tab):not(.map-tab)');
+  switchView('dashboard', dashBtn);
+  selectNeighborhood(id);
+}
+
+const NEIGHBORHOODS = [
+  {
+    id:'waldo', name:'Waldo', region:'south', score:87, pop:'18,400', income:'$62,000', age:34, signal:847,
+    tags:['High Opportunity','Food Desert Adjacent','Growing Population'],
+    tagTypes:['ntag-opp','ntag-warn','ntag-info'],
+    summary:'Strong community identity with documented supply-demand mismatch. 800+ Yelp reviews citing lack of nearby specialty food and everyday retail options. Population growing 3-4% annually while anchor concepts have closed.',
+    custom:true,
+    gaps:[
+      {title:'Specialty Food & Grocery',desc:'847 Yelp reviews cite "nothing nearby" — closest specialty grocer 0.7mi. Community loyalty is high, anchor closed 2022.',demand:91,sat:18,via:88},
+      {title:'Independent Coffee Concept',desc:'High foot traffic corridor with no independent third-wave coffee. Chain saturation creates counter-positioning opportunity.',demand:78,sat:35,via:74},
+      {title:'Community Retail / Hardware',desc:'Home improvement demographics strong. Nearest hardware store 2.1mi. Requests recurring on Nextdoor.',demand:72,sat:12,via:65},
+      {title:'Evening Dining / Wine Bar',desc:'Affluent median income, young professional growth segment. Evening F&B underserved vs. daytime.',demand:68,sat:42,via:61}
+    ],
+    risks:[
+      {level:'low',icon:'✓',text:'Strong community identity — high customer loyalty baseline for any well-positioned concept.'},
+      {level:'med',icon:'⚠',text:'Parking constraints on main corridor — delivery and access model matters.'},
+      {level:'med',icon:'⚠',text:'Rising commercial rents post-2022 closures — lease terms require careful negotiation.'}
+    ],
+    layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']
+  },
+  {
+    id:'crossroads', name:'Crossroads Arts District', region:'east', score:79, pop:'3,200', income:'$54,000', age:32, signal:412,
+    tags:['High Foot Traffic','Supply Mismatch','Young Demographic'],
+    tagTypes:['ntag-info','ntag-warn','ntag-purple'],
+    summary:'High foot traffic destination district but supply skewed toward destination dining and nightlife. 3,200 residents with median age 32 underserved on everyday accessible food and retail. Tourist vs. resident needs diverge sharply.',
+    custom:true,
+    gaps:[
+      {title:'Everyday Accessible F&B',desc:'Residents need affordable daily dining options — current supply serves destination visitors, not locals.',demand:84,sat:22,via:80},
+      {title:'Morning / Breakfast Concept',desc:'Strong foot traffic opens early. Minimal morning F&B options. Commuter and resident crossover.',demand:76,sat:28,via:72},
+      {title:'Affordable Grocery / Co-op',desc:'Nearest accessible grocery 1.2mi. Income demographics suggest co-op or small-format model.',demand:70,sat:15,via:64},
+      {title:'Professional Services Hub',desc:'Young professional resident base needs dry cleaning, printing, pharmacy within walkable range.',demand:65,sat:20,via:58}
+    ],
+    risks:[
+      {level:'med',icon:'⚠',text:'Tourist pricing creates resident alienation — positioning must explicitly serve both audiences.'},
+      {level:'high',icon:'▲',text:'Commercial displacement pressure is active — zoning and lease structure critical.'},
+      {level:'low',icon:'✓',text:'Strong arts district brand reduces marketing overhead for aligned concepts.'}
+    ],
+    layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']
+  },
+  {
+    id:'kck', name:'KCK / Wyandotte County', region:'west', score:91, pop:'165,000', income:'$38,000', age:31, signal:623,
+    tags:['Highest Opportunity','Food Desert','Opportunity Zone','Historically Underserved'],
+    tagTypes:['ntag-opp','ntag-warn','ntag-warn','ntag-purple'],
+    summary:'Highest composite opportunity score in the metro. Significant food access gaps, strong immigrant entrepreneur community, active opportunity zone designations. Population density and income demographics support essential services and culturally-specific concepts.',
+    custom:true,
+    gaps:[
+      {title:'Culturally Specific Food Retail',desc:'Large Hispanic and Somali communities with documented demand for culturally specific groceries and restaurants.',demand:95,sat:25,via:90},
+      {title:'Financial Services / Credit Union',desc:'Bank branch deserts documented. FDIC data shows high unbanked population. CDFI lending opportunity.',demand:88,sat:18,via:82},
+      {title:'Healthcare Adjacent Services',desc:'Limited primary care access. Dental, vision, pharmacy deserts identified in several tracts.',demand:85,sat:20,via:76},
+      {title:'Childcare / Early Education',desc:'Young median age, working family demographics, documented childcare desert across multiple zip codes.',demand:82,sat:15,via:74}
+    ],
+    risks:[
+      {level:'low',icon:'✓',text:'Opportunity Zone tax incentives available — significant for capital-intensive concepts.'},
+      {level:'med',icon:'⚠',text:'Income demographics require accessible pricing — premium positioning not viable.'},
+      {level:'low',icon:'✓',text:'Strong existing entrepreneurial community — partnership and co-location opportunities exist.'}
+    ],
+    layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']
+  },
+  {
+    id:'argentine', name:'Argentine / Rosedale', region:'west', score:84, pop:'22,000', income:'$35,000', age:29, signal:289,
+    tags:['High Opportunity','Immigrant Community','Food Culture Strength'],
+    tagTypes:['ntag-opp','ntag-purple','ntag-info'],
+    summary:'Vibrant Hispanic cultural corridor with strong food culture and entrepreneurial energy. Underserved on retail infrastructure despite concentrated demand. Young demographic, rising population, historically underinvested.',
+    custom:true,
+    gaps:[
+      {title:'Anchor Grocery / Mercado',desc:'No full-service grocery within 1.5mi serving community dietary needs. Mercado format has strong precedent.',demand:90,sat:20,via:85},
+      {title:'Business Services / Incubator',desc:'High immigrant entrepreneurship rate. Need for bilingual business services, commercial kitchen access.',demand:75,sat:10,via:70},
+      {title:'Cultural Event Space',desc:'Community events currently using church basements. Demand for dedicated flexible space.',demand:68,sat:8,via:62},
+      {title:'Youth Services / Tutoring',desc:'Young median age, school-age population. Academic support services documented gap.',demand:72,sat:18,via:65}
+    ],
+    risks:[
+      {level:'low',icon:'✓',text:'Strong community social capital — established networks reduce customer acquisition costs.'},
+      {level:'med',icon:'⚠',text:'Lower income ceiling requires creative financing — CDFIs are natural funding partners here.'},
+      {level:'med',icon:'⚠',text:'Infrastructure gaps in some corridors — tenant improvement costs may be elevated.'}
+    ],
+    layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']
+  },
+  {
+    id:'eastside', name:'East Side / Prospect', region:'east', score:88, pop:'45,000', income:'$32,000', age:33, signal:534,
+    tags:['Critical Gap Zone','Historical Disinvestment','Redevelopment Active'],
+    tagTypes:['ntag-warn','ntag-warn','ntag-info'],
+    summary:'Highest gap-to-population ratio in metro. Decades of documented disinvestment along Prospect corridor. Active redevelopment investments creating window for responsible entrepreneurship. Essential services most critically needed.',
+    custom:true,
+    gaps:[
+      {title:'Grocery / Fresh Produce Access',desc:'Active food desert. Nearest full-service grocery 2.4mi. Residents cite this as #1 neighborhood need.',demand:96,sat:8,via:88},
+      {title:'Healthcare Services',desc:'Primary care shortage area designation. Urgent care and dental deserts documented.',demand:90,sat:12,via:80},
+      {title:'Financial Empowerment Services',desc:'High unbanked rate. Credit-building, financial literacy, and CDFI lending access critical.',demand:85,sat:14,via:76},
+      {title:'Community Anchor Retail',desc:'Social infrastructure gap — barbershops, beauty, community gathering spaces with economic anchoring.',demand:78,sat:20,via:70}
+    ],
+    risks:[
+      {level:'high',icon:'▲',text:'Displacement risk is real — any development must engage existing residents as stakeholders, not subjects.'},
+      {level:'low',icon:'✓',text:'Multiple redevelopment grants and CDFI programs active — capital access better than it appears.'},
+      {level:'med',icon:'⚠',text:'Infrastructure variability by block — due diligence on specific sites essential.'}
+    ],
+    layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']
+  },
+  // ---- AUTO-GENERATED NEIGHBORHOODS ----
+  {id:'brookside',name:'Brookside',region:'south',score:75,pop:'9,200',income:'$71,000',age:38,signal:320,tags:['Growing','Established Community'],tagTypes:['ntag-info','ntag-opp'],summary:'Affluent, established neighborhood adjacent to Waldo. High income demographics with limited F&B variety. Dining concepts with strong local identity perform well.',custom:false,gaps:[{title:'Upscale Casual Dining',desc:'Income demographics support premium positioning. Limited options in corridor.',demand:72,sat:38,via:68},{title:'Specialty Retail',desc:'Boutique and specialty retail underrepresented relative to income level.',demand:65,sat:32,via:60},{title:'Fitness / Wellness',desc:'Health-conscious demographics, limited local options.',demand:68,sat:40,via:62},{title:'Wine & Specialty Spirits',desc:'High wine consumption demographic, no dedicated bottle shop.',demand:60,sat:28,via:55}],risks:[{level:'low',icon:'✓',text:'Stable, high-income customer base reduces revenue volatility.'},{level:'med',icon:'⚠',text:'High commercial rents — margin discipline critical.'},{level:'low',icon:'✓',text:'Strong community organization — neighborhood marketing support available.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'westport',name:'Westport',region:'south',score:62,pop:'5,800',income:'$48,000',age:28,signal:580,tags:['High Saturation','Nightlife District','Daytime Gap'],tagTypes:['ntag-warn','ntag-info','ntag-opp'],summary:'Saturated nightlife district with significant daytime opportunity gap. Evening F&B highly competitive; morning and afternoon concepts have clear white space.',custom:false,gaps:[{title:'Daytime Café / Workspace',desc:'Nightlife infrastructure sits empty daytime. Work-from-anywhere population growing.',demand:78,sat:20,via:72},{title:'Fast Casual Lunch',desc:'Office and resident daytime population underserved on quality fast casual.',demand:70,sat:25,via:65},{title:'Health / Wellness Services',desc:'Young demographic, health trends — yoga, fitness, nutrition.',demand:65,sat:35,via:58},{title:'Late Night Non-Bar Option',desc:'Post-event dining with no alcohol focus. Rare in district.',demand:60,sat:15,via:54}],risks:[{level:'high',icon:'▲',text:'Evening competition is extreme — nighttime concepts have high failure rate.'},{level:'low',icon:'✓',text:'Daytime positioning avoids direct competition with established players.'},{level:'med',icon:'⚠',text:'Parking and access challenges during peak hours.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'plaza',name:'Country Club Plaza',region:'south',score:55,pop:'4,100',income:'$88,000',age:41,signal:290,tags:['High Competition','Premium Market','Tourist Traffic'],tagTypes:['ntag-warn','ntag-info','ntag-purple'],summary:'High-end retail and dining district. Strong tourist traffic but extremely competitive and capital-intensive. Gaps exist in specific niches within premium positioning.',custom:false,gaps:[{title:'Independent Luxury Retail',desc:'Chain saturation — independent luxury concept with local story could differentiate.',demand:60,sat:65,via:50},{title:'Premium Health Services',desc:'High income, aging demographic — concierge health and wellness.',demand:65,sat:42,via:58},{title:'Private Event / Members Space',desc:'Corporate and social event demand documented.',demand:55,sat:30,via:48},{title:'Specialty Bookstore / Cultural',desc:'Cultural retail gap in otherwise retail-dense district.',demand:50,sat:20,via:45}],risks:[{level:'high',icon:'▲',text:'Lease costs among highest in metro — capital requirements substantial.'},{level:'high',icon:'▲',text:'Chain competition is fierce — independent concept needs strong differentiation.'},{level:'low',icon:'✓',text:'Tourist and corporate spending provides revenue ceiling support.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'midtown',name:'Midtown',region:'east',score:71,pop:'12,400',income:'$44,000',age:30,signal:380,tags:['Mixed Demographics','Transit Access','Emerging'],tagTypes:['ntag-purple','ntag-info','ntag-opp'],summary:'Transitional neighborhood with young, mixed-income population. Good transit access, growing creative class. Affordable commercial space creates entry opportunity.',custom:false,gaps:[{title:'Affordable Daily Dining',desc:'Working population needs accessible lunch and dinner options under $15.',demand:80,sat:28,via:75},{title:'Creative Co-working',desc:'Growing freelance and creative community. Co-working demand documented.',demand:70,sat:22,via:65},{title:'Community Grocery',desc:'Mid-range grocery option needed. Neither premium nor discount serves community.',demand:75,sat:18,via:68},{title:'Music / Culture Venue',desc:'Arts community presence but limited small venue infrastructure.',demand:62,sat:20,via:55}],risks:[{level:'med',icon:'⚠',text:'Transitional neighborhood — income and demographic trajectory uncertain.'},{level:'low',icon:'✓',text:'Affordable commercial rents create lower barrier to entry.'},{level:'med',icon:'⚠',text:'Some blocks have safety perception challenges — location selection matters.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'northkc',name:'North KC',region:'north',score:73,pop:'4,600',income:'$52,000',age:35,signal:210,tags:['Industrial Adjacent','Growing','Underanalyzed'],tagTypes:['ntag-info','ntag-opp','ntag-purple'],summary:'Small independent city adjacent to KC proper. Industrial heritage transitioning to mixed use. Underanalyzed relative to opportunity — limited competition, growing residential.',custom:false,gaps:[{title:'Full-Service Restaurant',desc:'Limited full-service dining options for growing residential and industrial workforce.',demand:76,sat:18,via:70},{title:'Hardware / Industrial Supply Retail',desc:'Industrial corridor creates unique demand for trade-adjacent retail.',demand:68,sat:15,via:62},{title:'Breakfast / Lunch Spot',desc:'Workforce population creates strong daytime F&B demand.',demand:72,sat:20,via:68},{title:'Specialty Services',desc:'Underserved on professional and personal services.',demand:60,sat:12,via:55}],risks:[{level:'low',icon:'✓',text:'Limited competition — first-mover advantage in several categories.'},{level:'med',icon:'⚠',text:'Smaller population base limits revenue ceiling.'},{level:'low',icon:'✓',text:'Lower commercial rents than KC proper — favorable economics.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'river-market',name:'River Market',region:'north',score:70,pop:'3,800',income:'$56,000',age:33,signal:340,tags:['Tourism Adjacent','Weekend Traffic','Residential Gap'],tagTypes:['ntag-info','ntag-opp','ntag-warn'],summary:'Historic market district with strong weekend tourism. Residential population underserved outside market hours. Evening and weekday opportunity.',custom:false,gaps:[{title:'Weekday Local Dining',desc:'Heavy weekend tourist F&B but weekday locals underserved.',demand:74,sat:25,via:68},{title:'Specialty Food Producer',desc:'Market infrastructure supports food production and direct-to-consumer.',demand:70,sat:30,via:65},{title:'Evening Destination',desc:'Limited evening draw outside weekend market hours.',demand:65,sat:22,via:60},{title:'Residential Services',desc:'Growing condo population needs everyday services.',demand:68,sat:18,via:62}],risks:[{level:'med',icon:'⚠',text:'Heavy seasonality — winter revenue drops significantly.'},{level:'low',icon:'✓',text:'Farmers market infrastructure reduces food concept overhead.'},{level:'med',icon:'⚠',text:'Tourist pricing creates tension with local affordability.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'liberty',name:'Liberty',region:'north',score:65,pop:'32,000',income:'$68,000',age:36,signal:195,tags:['Suburban','Family Demographics','Retail Gap'],tagTypes:['ntag-info','ntag-purple','ntag-warn'],summary:'Growing suburban market with strong family demographics. Retail options concentrated in big-box format. Independent concepts underrepresented.',custom:false,gaps:[{title:'Family Dining Independent',desc:'Chain saturation high — local family dining concept differentiated.',demand:70,sat:45,via:62},{title:'Specialty Kids Activities',desc:'Family demographics, limited enrichment and activity options.',demand:72,sat:30,via:66},{title:'Local Retail',desc:'Big-box dominates — independent retail with local identity has space.',demand:62,sat:40,via:55},{title:'Coffee / Community Space',desc:'Suburban coffee market less saturated than urban — community gathering point.',demand:65,sat:35,via:58}],risks:[{level:'high',icon:'▲',text:'Chain competition is primary challenge — differentiation essential.'},{level:'low',icon:'✓',text:'Strong income demographics support sustainable pricing.'},{level:'med',icon:'⚠',text:'Car-dependent geography requires strong parking and visibility.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'independence',name:'Independence',region:'east',score:68,pop:'117,000',income:'$40,000', age:37,signal:420,tags:['Large Market','Historical Identity','Revitalization'],tagTypes:['ntag-info','ntag-purple','ntag-opp'],summary:'Large independent city east of KC. Strong historical identity, active downtown revitalization. Income demographics suggest value-positioned concepts perform best.',custom:false,gaps:[{title:'Downtown Anchor Dining',desc:'Revitalization investments need F&B anchor to activate foot traffic.',demand:76,sat:22,via:70},{title:'Value Grocery / Co-op',desc:'Mid-income demographics need accessible grocery option.',demand:74,sat:28,via:67},{title:'Entertainment / Venue',desc:'Revitalization creates demand for evening entertainment destination.',demand:68,sat:20,via:62},{title:'Healthcare Adjacent',desc:'Aging population, limited primary care access in central corridors.',demand:72,sat:24,via:65}],risks:[{level:'med',icon:'⚠',text:'Revitalization momentum must sustain — timing of entry matters.'},{level:'low',icon:'✓',text:'Lower commercial costs than KC proper.'},{level:'med',icon:'⚠',text:'Distance from urban core limits cross-market customer flow.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'lees-summit',name:"Lee's Summit",region:'south',score:60,pop:'101,000',income:'$74,000',age:38,signal:280,tags:['Affluent Suburban','Chain Saturated','Niche Opportunity'],tagTypes:['ntag-purple','ntag-warn','ntag-opp'],summary:'Affluent, fast-growing suburb. Chain saturation is high but income demographics create room for premium independent concepts in specific niches.',custom:false,gaps:[{title:'Premium Independent Dining',desc:'Affluent demographic with chain fatigue — local fine casual concept has real space.',demand:68,sat:50,via:60},{title:'Specialty Fitness',desc:'Health-conscious, high-income demographic. Boutique fitness growing.',demand:72,sat:42,via:65},{title:'Local Brewery / Taproom',desc:'Craft beverage market underrepresented vs. demographics.',demand:65,sat:35,via:58},{title:'Specialty Education / Enrichment',desc:'Family demographics, demand for premium enrichment.',demand:62,sat:38,via:55}],risks:[{level:'high',icon:'▲',text:'Chain saturation is highest in metro — independent concept must be exceptional.'},{level:'low',icon:'✓',text:'Strong income base supports premium pricing.'},{level:'med',icon:'⚠',text:'Car-dependent geography — location selection and visibility critical.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'overland-park',name:'Overland Park',region:'west',score:58,pop:'197,000',income:'$70,000',age:36,signal:510,tags:['Largest Suburb','High Competition','Corporate Market'],tagTypes:['ntag-info','ntag-warn','ntag-purple'],summary:'Largest suburb in metro, strong corporate office presence. Chain saturation extreme but corporate market creates B2B and catering opportunities alongside consumer gaps.',custom:false,gaps:[{title:'Corporate Catering / Delivery',desc:'Dense office corridor with limited quality catering options.',demand:75,sat:30,via:68},{title:'Farm-to-Table Independent',desc:'Affluent, educated demographic — premium local sourcing concept.',demand:65,sat:45,via:57},{title:'Specialty Coffee Chain Alternative',desc:'Corporate corridor — quality independent coffee has space.',demand:68,sat:48,via:60},{title:'Wellness Services',desc:'High-income, health-conscious demographic. Holistic services gap.',demand:62,sat:40,via:55}],risks:[{level:'high',icon:'▲',text:'National chain competition is at its most intense in this market.'},{level:'low',icon:'✓',text:'Corporate market provides stable B2B revenue base.'},{level:'med',icon:'⚠',text:'High commercial rents in prime corridors.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'merriam',name:'Merriam',region:'west',score:66,pop:'11,000',income:'$48,000',age:35,signal:165,tags:['Underanalyzed','Value Market','Corridor Access'],tagTypes:['ntag-opp','ntag-info','ntag-purple'],summary:'Small but underanalyzed suburb on major corridor. Lower income demographics than neighbors but strong corridor access. Value-positioned independent concepts have low competition.',custom:false,gaps:[{title:'Quality Fast Casual',desc:'Value market with limited quality options — accessible price point with quality differentiation.',demand:74,sat:22,via:68},{title:'Auto Services',desc:'Working-class demographics, high demand for accessible auto service.',demand:70,sat:28,via:64},{title:'Discount Retail',desc:'Income demographics support value retail.',demand:65,sat:32,via:58},{title:'Community Services Hub',desc:'Limited social services and community infrastructure.',demand:60,sat:15,via:54}],risks:[{level:'low',icon:'✓',text:'Low competition — limited independent concepts currently operating.'},{level:'med',icon:'⚠',text:'Lower income ceiling limits pricing power.'},{level:'low',icon:'✓',text:'Corridor traffic provides consistent customer exposure.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'raytown',name:'Raytown',region:'east',score:70,pop:'29,000',income:'$42,000',age:39,signal:220,tags:['Working Class','Essential Services Gap','Stable'],tagTypes:['ntag-purple','ntag-warn','ntag-info'],summary:'Stable working-class suburb with essential services gap. Aging infrastructure has reduced options; demographics support community-anchored concepts.',custom:false,gaps:[{title:'Fresh Food Access',desc:'Limited fresh grocery options — value-format fresh market would serve documented need.',demand:82,sat:20,via:75},{title:'Community Dining Anchor',desc:'Affordable full-service family dining gap.',demand:74,sat:25,via:68},{title:'Health Services',desc:'Limited primary care, dental access documented.',demand:78,sat:22,via:70},{title:'Youth Services',desc:'School-age population, limited after-school infrastructure.',demand:65,sat:18,via:58}],risks:[{level:'low',icon:'✓',text:'Stable population — customer base reliable.'},{level:'med',icon:'⚠',text:'Income demographics require value pricing strategy.'},{level:'low',icon:'✓',text:'Lower commercial rents than urban KC.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'gladstone',name:'Gladstone',region:'north',score:64,pop:'27,000',income:'$55,000',age:40,signal:175,tags:['North Suburb','Family Market','Underserved'],tagTypes:['ntag-info','ntag-purple','ntag-opp'],summary:'Family-oriented north suburb. Moderate income, stable demographics. Limited independent dining and retail compared to south suburbs despite comparable income levels.',custom:false,gaps:[{title:'Independent Family Dining',desc:'Chain saturation with no quality independent option.',demand:72,sat:35,via:65},{title:'Specialty Grocery',desc:'Limited specialty or natural grocery options.',demand:66,sat:22,via:60},{title:'Family Entertainment',desc:'Limited family activity options in immediate area.',demand:68,sat:28,via:62},{title:'Coffee Community Space',desc:'No strong local gathering point — community coffee concept.',demand:62,sat:20,via:56}],risks:[{level:'low',icon:'✓',text:'Stable demographics — lower volatility than urban markets.'},{level:'med',icon:'⚠',text:'Modest income ceiling limits upscale positioning.'},{level:'low',icon:'✓',text:'Underanalyzed — lower competitive awareness from outside operators.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'platte-city',name:'Platte City',region:'north',score:61,pop:'5,500',income:'$56,000',age:37,signal:110,tags:['Exurban','Limited Options','Growing'],tagTypes:['ntag-info','ntag-opp','ntag-purple'],summary:'Small exurban market northwest of KC. Growing residential development outpacing commercial. First-mover opportunities in several categories.',custom:false,gaps:[{title:'Full-Service Dining',desc:'Limited F&B options despite growing residential base.',demand:74,sat:12,via:68},{title:'Grocery Access',desc:'Nearest full grocery 15 minutes — local option viable.',demand:72,sat:8,via:65},{title:'Services Hub',desc:'Growing families need accessible services.',demand:65,sat:10,via:58},{title:'Youth Activities',desc:'Young family demographic, limited enrichment.',demand:60,sat:8,via:54}],risks:[{level:'low',icon:'✓',text:'Very low competition — near-monopoly in several categories.'},{level:'med',icon:'⚠',text:'Small population base — revenue ceiling modest.'},{level:'med',icon:'⚠',text:'Exurban distance reduces passing trade.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'martin-city',name:'Martin City',region:'south',score:72,pop:'8,200',income:'$58,000',age:36,signal:240,tags:['BBQ Corridor','Emerging','Local Character'],tagTypes:['ntag-opp','ntag-info','ntag-purple'],summary:'Emerging corridor with strong local character and BBQ identity. Growing residential presence with gap in non-BBQ dining and daily services.',custom:false,gaps:[{title:'Non-BBQ Dining Variety',desc:'Heavy BBQ concentration — other cuisines underrepresented for growing resident base.',demand:74,sat:20,via:68},{title:'Breakfast / Brunch Concept',desc:'No strong morning destination despite corridor traffic.',demand:70,sat:18,via:64},{title:'Craft Beverage',desc:'Emerging area suits independent brewery or bottle shop.',demand:66,sat:22,via:60},{title:'Specialty Retail',desc:'Local character supports artisan and specialty retail.',demand:60,sat:18,via:55}],risks:[{level:'low',icon:'✓',text:'Strong local identity reduces marketing burden for aligned concepts.'},{level:'med',icon:'⚠',text:'BBQ identity can create positioning challenges for non-BBQ concepts.'},{level:'low',icon:'✓',text:'Corridor growth trajectory positive.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'hyde-park',name:'Hyde Park',region:'east',score:74,pop:'7,400',income:'$46,000',age:31,signal:310,tags:['Historic District','Young Professional','Affordable Entry'],tagTypes:['ntag-purple','ntag-info','ntag-opp'],summary:'Historic neighborhood with growing young professional and artist population. Affordable commercial rents create entry opportunity. Nightlife and arts culture building.',custom:false,gaps:[{title:'Neighborhood Bar / Gathering',desc:'Young social demographic with limited local gathering point.',demand:76,sat:18,via:70},{title:'Coffee / Work Space',desc:'Work-from-home and creative class — co-working café.',demand:72,sat:20,via:66},{title:'Affordable Casual Dining',desc:'Young income demographic needs accessible everyday dining.',demand:70,sat:25,via:64},{title:'Arts / Culture Retail',desc:'Artist community creates market for art supply, framing, creative retail.',demand:60,sat:12,via:54}],risks:[{level:'low',icon:'✓',text:'Affordable commercial rents — low barrier to entry.'},{level:'med',icon:'⚠',text:'Income demographics limit pricing power.'},{level:'low',icon:'✓',text:'Cultural momentum building — early entry advantage available.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'volker',name:'Volker',region:'south',score:69,pop:'6,800',income:'$50,000',age:29,signal:290,tags:['University Adjacent','Young Demo','High Turnover'],tagTypes:['ntag-info','ntag-purple','ntag-warn'],summary:'University adjacent neighborhood with very young demographic. High population turnover creates both challenge and opportunity. Affordable concepts with strong value proposition perform well.',custom:false,gaps:[{title:'Study / Work Café',desc:'University population needs extended-hours work-friendly coffee.',demand:80,sat:28,via:72},{title:'Affordable Late Night Food',desc:'Young demographic, late night demand documented.',demand:74,sat:22,via:68},{title:'Budget Grocery / Convenience',desc:'Student budget constraints — value grocery or prepared foods.',demand:70,sat:30,via:62},{title:'Experiential Bar',desc:'Young social demographic — experience-forward bar concept.',demand:65,sat:35,via:57}],risks:[{level:'high',icon:'▲',text:'High population turnover — marketing must be continuous, not relationship-dependent.'},{level:'low',icon:'✓',text:'Predictable demand patterns around academic calendar.'},{level:'med',icon:'⚠',text:'Budget demographics limit premium pricing.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'blue-springs',name:'Blue Springs',region:'east',score:62,pop:'57,000',income:'$62,000',age:37,signal:195,tags:['East Suburb','Family Market','Chain Heavy'],tagTypes:['ntag-info','ntag-purple','ntag-warn'],summary:'Large family-oriented eastern suburb. Strong income demographics but heavy chain saturation. Independent concepts need strong local identity to differentiate.',custom:false,gaps:[{title:'Independent Dining Concept',desc:'Chain fatigue documented — local identity concept has audience.',demand:68,sat:48,via:60},{title:'Specialty Fitness',desc:'Health-conscious family demographic — boutique fitness underrepresented.',demand:66,sat:38,via:58},{title:'Local Brewery',desc:'Craft beer demand growing, limited local production.',demand:62,sat:30,via:55},{title:'Specialty Kids',desc:'Young family demo, enrichment and activity gap.',demand:65,sat:35,via:58}],risks:[{level:'high',icon:'▲',text:'Chain competition dominant — differentiation is make-or-break.'},{level:'low',icon:'✓',text:'Strong income base supports sustainable pricing.'},{level:'med',icon:'⚠',text:'Car-dependent geography requires high-visibility location.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'grandview',name:'Grandview',region:'south',score:76,pop:'25,000',income:'$38,000',age:34,signal:310,tags:['Underserved','Working Class','Essential Gap'],tagTypes:['ntag-warn','ntag-purple','ntag-opp'],summary:'Working-class south suburb with essential services gaps. Strong case for community-anchored concepts. Low commercial rents create viable economics for value-positioned operators.',custom:false,gaps:[{title:'Fresh Food / Grocery',desc:'Limited fresh food access — value grocery or produce market.',demand:84,sat:15,via:76},{title:'Affordable Dining',desc:'Working income demographics need accessible everyday dining.',demand:76,sat:20,via:70},{title:'Health Services',desc:'Limited primary care and dental access.',demand:78,sat:18,via:70},{title:'Community Hub',desc:'Social infrastructure gaps — gathering point with economic function.',demand:68,sat:12,via:62}],risks:[{level:'low',icon:'✓',text:'Low commercial rents — favorable unit economics.'},{level:'med',icon:'⚠',text:'Income demographics require strict value positioning.'},{level:'low',icon:'✓',text:'Underanalyzed — low competitive awareness.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'olathe',name:'Olathe',region:'west',score:59,pop:'142,000',income:'$72,000',age:35,signal:380,tags:['Fast Growing','Corporate','Suburban'],tagTypes:['ntag-info','ntag-purple','ntag-warn'],summary:'One of the fastest-growing cities in Kansas. Strong income demographics, corporate presence. Chain saturation growing with population but independent concepts have entry windows.',custom:false,gaps:[{title:'Premium Casual Dining',desc:'Growing affluent population with limited local premium options.',demand:66,sat:42,via:58},{title:'Specialty Grocery',desc:'Natural/specialty grocery underrepresented relative to demographics.',demand:68,sat:35,via:60},{title:'Corporate Services',desc:'Growing corporate campus presence — B2B services gap.',demand:65,sat:30,via:58},{title:'Craft Brewery',desc:'Craft beverage market expanding with population growth.',demand:62,sat:32,via:55}],risks:[{level:'high',icon:'▲',text:'Chain growth is keeping pace with population — windows closing.'},{level:'low',icon:'✓',text:'Income demographics strong and growing.'},{level:'med',icon:'⚠',text:'High commercial rents in newer development corridors.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']},
+  {id:'shawnee',name:'Shawnee',region:'west',score:61,pop:'69,000',income:'$68,000',age:37,signal:245,tags:['Established Suburb','Family','Moderate Opportunity'],tagTypes:['ntag-info','ntag-purple','ntag-opp'],summary:'Established western suburb with stable family demographics. Moderate competition — neither as saturated as OP nor as underserved as working-class corridors.',custom:false,gaps:[{title:'Independent Restaurant',desc:'Chain heavy with room for quality independent.',demand:65,sat:42,via:57},{title:'Specialty Fitness / Wellness',desc:'Health-conscious family demographic, boutique gap.',demand:64,sat:38,via:56},{title:'Artisan / Specialty Retail',desc:'Established suburb with appetite for local.',demand:58,sat:30,via:52},{title:'Community Coffee',desc:'Gathering point gap in residential corridors.',demand:62,sat:35,via:55}],risks:[{level:'med',icon:'⚠',text:'Moderate chain competition — not extreme but present.'},{level:'low',icon:'✓',text:'Stable demographics, low volatility.'},{level:'low',icon:'✓',text:'Good commercial real estate availability.'}],layers:['Consumer Sentiment','Keyword Clustering','Census Demographics','Business Density','Historical Disinvestment','Opportunity Zone Status']}
+];
+
+// =============================================
+// STATE
+// =============================================
+let activeFilter = 'all';
+let activeNbhd = null;
+let currentView = 'dashboard';
+let chatHistories = {};
+let importHistory = [];
+
+// =============================================
+// INIT
+// =============================================
+function populateImportSelect(){
+  const sel = document.getElementById('import-nbhd');
+  NEIGHBORHOODS.forEach(n=>{
+    const opt = document.createElement('option');
+    opt.value = n.id;
+    opt.textContent = n.name;
+    sel.appendChild(opt);
+  });
+}
+
+// =============================================
+// SIDEBAR
+// =============================================
+function renderSidebar(){
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const list = document.getElementById('sidebar-list');
+  list.innerHTML = '';
+  const filtered = NEIGHBORHOODS.filter(n=>{
+    const matchSearch = n.name.toLowerCase().includes(search);
+    const matchFilter =
+      activeFilter==='all' ? true :
+      activeFilter==='high' ? n.score>=75 :
+      n.region===activeFilter;
+    return matchSearch && matchFilter;
+  });
+  filtered.forEach(n=>{
+    const cls = n.score>=80?'score-high':n.score>=65?'score-med':'score-low';
+    const div = document.createElement('div');
+    div.className = 'nbhd-item'+(activeNbhd===n.id?' active':'');
+    div.innerHTML = `<div class="nbhd-name">${n.name}</div><div class="nbhd-meta"><span class="nbhd-region">${n.region.toUpperCase()}</span><span class="score-badge ${cls}">${n.score}</span></div>`;
+    div.onclick = ()=>selectNeighborhood(n.id);
+    list.appendChild(div);
+  });
+}
+
+function filterNeighborhoods(){ renderSidebar(); }
+function setFilter(f, el){
+  activeFilter = f;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderSidebar();
+}
+
+// =============================================
+// NEIGHBORHOOD VIEW
+// =============================================
+function selectNeighborhood(id){
+  activeNbhd = id;
+  renderSidebar();
+  if(currentView!=='dashboard') switchView('dashboard');
+  const n = NEIGHBORHOODS.find(x=>x.id===id);
+  if(!n) return;
+  const empty = document.getElementById('empty-state');
+  const content = document.getElementById('nbhd-content');
+  empty.style.display = 'none';
+  content.style.display = 'block';
+  content.className = 'fade-in';
+
+  const scoreCls = n.score>=80?'score-high':n.score>=65?'score-med':'score-low';
+
+  const gapsHTML = n.gaps.map((g, gi)=>`
+    <div class="gap-card" onclick="toggleGap('${id}',${gi},this)">
+      <div class="gap-card-header">
+        <div class="gap-title">${g.title}</div>
+        <span class="gap-expand-arrow">▼</span>
+      </div>
+      <div class="gap-desc">${g.desc}</div>
+      <div class="bar-row"><div class="bar-label"><span>Demand</span><span>${g.demand}%</span></div><div class="bar-track"><div class="bar-fill bar-demand" style="width:${g.demand}%"></div></div></div>
+      <div class="bar-row"><div class="bar-label"><span>Saturation</span><span>${g.sat}%</span></div><div class="bar-track"><div class="bar-fill bar-sat" style="width:${g.sat}%"></div></div></div>
+      <div class="bar-row"><div class="bar-label"><span>Viability</span><span>${g.via}%</span></div><div class="bar-track"><div class="bar-fill bar-via" style="width:${g.via}%"></div></div></div>
+      <div class="gap-expanded" id="gap-exp-${id}-${gi}">
+        <div id="gap-exp-content-${id}-${gi}" style="font-size:11px;color:var(--text3);">Loading analysis...</div>
+        <button class="gap-ai-btn" onclick="event.stopPropagation();analyzeGap('${id}',${gi})">◎ Get entry strategies →</button>
+      </div>
+    </div>`).join('');
+
+  const risksHTML = n.risks.map((r, ri)=>`
+    <div class="risk-item risk-${r.level}" onclick="toggleRisk('${id}',${ri},this)">
+      <div class="risk-inner">
+        <span class="risk-icon">${r.icon}</span>
+        <span class="risk-text" style="flex:1;">${r.text}</span>
+        <span class="risk-arrow">▸ Strategies</span>
+      </div>
+      <div class="risk-expanded" id="risk-exp-${id}-${ri}"></div>
+    </div>`).join('');
+
+  const tagsHTML = n.tags.map((t,i)=>`<span class="ntag ${n.tagTypes[i]}">${t}</span>`).join('');
+
+  const layersHTML = n.layers.map(l=>`
+    <div class="layer-item">
+      <div class="layer-dot layer-active"></div>
+      <div class="layer-name">${l}</div>
+    </div>`).join('');
+
+  // Chat history
+  if(!chatHistories[id]) chatHistories[id] = [];
+  const chatHTML = chatHistories[id].length === 0
+    ? `<div class="msg msg-ai"><div class="msg-label">◎ PRESAGEIQ</div>I'm your AI analyst for ${n.name}. I have full context on this neighborhood's opportunity profile, demographic data, and gap analysis. Ask me anything — ideal concepts, competitive positioning, specific risks, or how to interpret the data.</div>`
+    : chatHistories[id].map(m=>
+        m.role==='ai'
+          ? `<div class="msg msg-ai"><div class="msg-label">◎ INSIGHT AI</div>${m.text}</div>`
+          : `<div class="msg msg-user">${m.text}</div>`
+      ).join('');
+
+  content.innerHTML = `
+    <div class="nbhd-header">
+      <div class="nbhd-title">${n.name}</div>
+      <div class="nbhd-subtitle">${n.region.toUpperCase()} KC METRO · OPPORTUNITY SCORE <span class="score-badge ${scoreCls}" style="margin-left:6px;">${n.score}/100</span></div>
+      <div class="nbhd-tags">${tagsHTML}</div>
+    </div>
+
+    <!-- IDEA TESTER — PROMINENT TOP INPUT -->
+    <div class="idea-tester-hero">
+      <div class="idea-hero-label">◎ TEST YOUR BUSINESS IDEA</div>
+      <div class="idea-hero-sub">Describe a concept — PresageIQ will analyze market fit, surface what locals are actually saying, and tell you what works, what doesn't, and what to adjust.</div>
+      <div class="idea-hero-row">
+        <input class="idea-hero-input" id="idea-input-${id}" placeholder="e.g. I'm considering opening a wine bar in ${n.name} — tapas, natural wine, $18 avg check..." onkeydown="if(event.key==='Enter')testIdea('${id}')"/>
+        <button class="idea-hero-btn" id="idea-btn-${id}" onclick="testIdea('${id}')">Analyze →</button>
+      </div>
+      <div class="idea-hero-result" id="idea-result-${id}" style="display:none;"></div>
+    </div>
+
+    <div class="metrics-row">
+      <div class="metric-card"><div class="metric-label">Population</div><div class="metric-value">${n.pop}</div><div class="metric-sub">Metro estimate</div></div>
+      <div class="metric-card"><div class="metric-label">Median Income</div><div class="metric-value">${n.income}</div><div class="metric-sub">Household / year</div></div>
+      <div class="metric-card"><div class="metric-label">Median Age</div><div class="metric-value">${n.age}</div><div class="metric-sub">Years</div></div>
+      <div class="metric-card"><div class="metric-label">Review Signal</div><div class="metric-value">${n.signal}</div><div class="metric-sub">Indexed gap mentions</div></div>
+    </div>
+
+    <div class="section-label">Analysis Summary</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:20px;font-size:12px;color:var(--text2);line-height:1.65;">${n.summary}</div>
+
+    <div class="section-label">Active Data Layers</div>
+    <div class="layers-grid">${layersHTML}</div>
+
+    <div class="section-label">Opportunity Gaps</div>
+    <div class="gaps-grid">${gapsHTML}</div>
+
+    <div class="section-label">Risk Signals</div>
+    <div class="risks-row">${risksHTML}</div>
+
+    <div class="section-label">What the Locals Think</div>
+    <div id="locals-panel-${id}" class="locals-panel">
+      <div class="locals-empty" style="color:var(--text3);font-size:11px;padding:4px 0;">Enter a business idea above — PresageIQ will pull what locals are actually saying about concepts like yours from Reddit, reviews, and KC food blogs.</div>
+    </div>
+
+    <div class="section-label">AI Analyst — ${n.name}</div>
+    <div class="chat-wrap">
+      <div class="chat-header">
+        <div class="status-dot"></div>
+        <div class="chat-header-label">PresageIQ · ${n.name} Context Loaded</div>
+      </div>
+      <div class="chat-messages" id="chat-${id}">${chatHTML}</div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chat-input-${id}" placeholder="Ask about ${n.name}..." onkeydown="if(event.key==='Enter')sendChat('${id}')"/>
+        <button class="chat-send" id="chat-btn-${id}" onclick="sendChat('${id}')">Send</button>
+      </div>
+    </div>
+  `;
+
+  // Locals panel starts empty — populated when user submits idea
+  renderLocalsPanel(id, []);
+}
+
+// =============================================
+// AI CHAT
+// =============================================
+async function sendChat(id){
+  const input = document.getElementById(`chat-input-${id}`);
+  const btn = document.getElementById(`chat-btn-${id}`);
+  const messages = document.getElementById(`chat-${id}`);
+  const text = input.value.trim();
+  if(!text) return;
+
+  const n = NEIGHBORHOODS.find(x=>x.id===id);
+  input.value = '';
+  btn.disabled = true;
+
+  if(!chatHistories[id]) chatHistories[id] = [];
+  chatHistories[id].push({role:'user',text});
+
+  const userMsg = document.createElement('div');
+  userMsg.className = 'msg msg-user fade-in';
+  userMsg.textContent = text;
+  messages.appendChild(userMsg);
+
+  const typing = document.createElement('div');
+  typing.className = 'msg msg-ai';
+  typing.innerHTML = '<div class="msg-label">◎ INSIGHT AI</div><div class="msg-typing"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  messages.appendChild(typing);
+  messages.scrollTop = messages.scrollHeight;
+
+  const systemPrompt = `You are PresageIQ, an AI market intelligence analyst specializing in Kansas City neighborhood analysis. You have deep knowledge of the following neighborhood data:
+
+Neighborhood: ${n.name}
+Region: ${n.region} KC Metro
+Opportunity Score: ${n.score}/100
+Population: ${n.pop}
+Median Income: ${n.income}
+Median Age: ${n.age}
+Review Signal Volume: ${n.signal}
+Summary: ${n.summary}
+Tags: ${n.tags.join(', ')}
+
+Opportunity Gaps:
+${n.gaps.map(g=>`- ${g.title}: ${g.desc} (Demand: ${g.demand}%, Saturation: ${g.sat}%, Viability: ${g.via}%)`).join('\n')}
+
+Risk Signals:
+${n.risks.map(r=>`- [${r.level.toUpperCase()}] ${r.text}`).join('\n')}
+
+Methodology: Three-layer analysis combining consumer sentiment (Yelp/Google Reviews), keyword clustering (NLP gap detection), and demographic overlay (US Census). Convergence across all three layers = meaningful signal.
+
+Ethical framework: Cross-reference opportunity signals against historical disinvestment corridors. Use business density relative to population, not absolute metrics. AI surfaces patterns; human judgment interprets causes.
+
+Be specific, honest, and actionable. Reference actual data from the neighborhood profile when relevant. Keep responses concise — 2-4 paragraphs max. If asked about something outside the data, say so clearly.`;
+
+  const conversationMessages = chatHistories[id]
+    .filter(m=>m.role==='user'||m.role==='ai')
+    .map(m=>({role:m.role==='ai'?'assistant':'user',content:m.text}));
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6',
+      max_tokens:1000,
+      system:systemPrompt,
+      messages:conversationMessages
+    });
+    const reply = data.content?.[0]?.text || 'Unable to get response.';
+    typing.remove();
+    const aiMsg = document.createElement('div');
+    aiMsg.className = 'msg msg-ai fade-in';
+    aiMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>${reply}`;
+    messages.appendChild(aiMsg);
+    chatHistories[id].push({role:'ai',text:reply});
+    messages.scrollTop = messages.scrollHeight;
+  } catch(e) {
+    typing.remove();
+    const errMsg = document.createElement('div');
+    errMsg.className = 'msg msg-ai fade-in';
+    if(e.message === 'SESSION_LIMIT'){
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>You've reached the session AI limit (${SESSION_LIMIT} calls). <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add your own OpenAI API key</span> to continue without limits this session.`;
+    } else if(e.message === 'CREDITS'){
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>The shared AI service is temporarily at capacity. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add your OpenAI API key</span> to continue — it routes securely through our server.`;
+    } else if(e.message === 'RATE_LIMITED'){
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>Too many requests from this connection. Please wait a few minutes and try again.`;
+    } else if(e.message === 'NO_KEY'){
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>AI service unavailable. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add a backup OpenAI key</span> to continue.`;
+    } else if(e.message === 'NETWORK'){
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>Network error reaching the AI service. Check your connection and try again.`;
+    } else {
+      errMsg.innerHTML = `<div class="msg-label">◎ PRESAGEIQ</div>Unexpected error. Please try again.`;
+    }
+    messages.appendChild(errMsg);
+  }
+  btn.disabled = false;
+}
+
+// =============================================
+// GAP CARD EXPAND / AI ANALYSIS
+// =============================================
+function toggleGap(nbhdId, gapIdx, card) {
+  const isOpen = card.classList.toggle('open');
+  // Auto-load AI content on first open
+  if(isOpen) {
+    const cacheKey = `${nbhdId}-${gapIdx}`;
+    const contentEl = document.getElementById(`gap-exp-content-${nbhdId}-${gapIdx}`);
+    if(contentEl && !gapAnalysisCache[cacheKey]) {
+      contentEl.textContent = 'Click "Get entry strategies" below for AI-powered analysis.';
+    } else if(contentEl && gapAnalysisCache[cacheKey]) {
+      contentEl.innerHTML = gapAnalysisCache[cacheKey];
+    }
+  }
+}
+
+async function analyzeGap(nbhdId, gapIdx) {
+  const n = NEIGHBORHOODS.find(x => x.id === nbhdId);
+  if(!n) return;
+  const g = n.gaps[gapIdx];
+  const cacheKey = `${nbhdId}-${gapIdx}`;
+  const contentEl = document.getElementById(`gap-exp-content-${nbhdId}-${gapIdx}`);
+  if(!contentEl) return;
+  if(gapAnalysisCache[cacheKey]) { contentEl.innerHTML = gapAnalysisCache[cacheKey]; return; }
+
+  contentEl.innerHTML = `<div class="msg-typing" style="padding:4px 0;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>`;
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:600,
+      system:`You are PresageIQ, a Kansas City market intelligence analyst. Be direct, specific, and practical. No filler.`,
+      messages:[{role:'user',content:`Gap opportunity: ${g.title}\nDescription: ${g.desc}\nDemand ${g.demand}%, Saturation ${g.sat}%, Viability ${g.via}%\nNeighborhood: ${n.name} — ${n.summary}\n\nRespond with:\n1. WHY THIS GAP EXISTS (2 sentences)\n2. THREE ENTRY STRATEGIES (numbered, specific to this neighborhood)\n3. WHAT SUCCESS LOOKS LIKE here (1 sentence)\nKC-specific, actionable, no generic advice.`}]
+    });
+    const text = data.content?.[0]?.text || '';
+    const formatted = text.replace(/\n/g,'<br>');
+    gapAnalysisCache[cacheKey] = formatted;
+    contentEl.innerHTML = formatted;
+  } catch(e) {
+    contentEl.innerHTML = `<span style="color:var(--danger);font-size:11px;">Could not load — try again.</span>`;
+  }
+}
+
+// =============================================
+// RISK EXPAND / AI MITIGATION
+// =============================================
+function toggleRisk(nbhdId, riskIdx, card) {
+  const isOpen = card.classList.toggle('open');
+  const expEl = document.getElementById(`risk-exp-${nbhdId}-${riskIdx}`);
+  if(!expEl) return;
+  if(isOpen) {
+    const cacheKey = `${nbhdId}-${riskIdx}`;
+    if(riskAnalysisCache[cacheKey]) {
+      expEl.innerHTML = riskAnalysisCache[cacheKey];
+    } else {
+      analyzeRisk(nbhdId, riskIdx);
+    }
+  }
+}
+
+async function analyzeRisk(nbhdId, riskIdx) {
+  const n = NEIGHBORHOODS.find(x => x.id === nbhdId);
+  if(!n) return;
+  const r = n.risks[riskIdx];
+  const expEl = document.getElementById(`risk-exp-${nbhdId}-${riskIdx}`);
+  if(!expEl) return;
+
+  expEl.innerHTML = `<div class="msg-typing" style="padding:4px 0;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>`;
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6', max_tokens:400,
+      system:`You are PresageIQ. Give concrete, actionable mitigation strategies for business risks in KC neighborhoods. 3 bullets, no fluff.`,
+      messages:[{role:'user',content:`Risk in ${n.name} (${r.level} level): ${r.text}\n\nGive 3 specific, actionable mitigation strategies a business owner can actually implement. Be direct.`}]
+    });
+    const text = data.content?.[0]?.text || '';
+    const html = `<div style="font-size:11px;color:var(--text2);line-height:1.65;">${text.replace(/\n/g,'<br>')}</div>`;
+    riskAnalysisCache[`${nbhdId}-${riskIdx}`] = html;
+    expEl.innerHTML = html;
+  } catch(e) {
+    expEl.innerHTML = `<span style="font-size:11px;color:var(--danger);">Could not load — try again.</span>`;
+  }
+}
+
+// =============================================
+// CUSTOM KEYWORDS
+// =============================================
+function addKeyword(id) {
+  const input = document.getElementById(`kw-input-${id}`);
+  if(!input) return;
+  const kw = input.value.trim().toLowerCase();
+  if(!kw) return;
+  if(!customKeywords[id]) customKeywords[id] = [];
+  if(customKeywords[id].includes(kw)) { input.value = ''; return; }
+  customKeywords[id].push(kw);
+  input.value = '';
+  renderKeywordChips(id);
+}
+
+function removeKeyword(id, kw) {
+  if(!customKeywords[id]) return;
+  customKeywords[id] = customKeywords[id].filter(k => k !== kw);
+  renderKeywordChips(id);
+}
+
+function renderKeywordChips(id) {
+  const container = document.getElementById(`kw-chips-${id}`);
+  if(!container) return;
+  const kws = customKeywords[id] || [];
+  if(kws.length === 0) {
+    container.innerHTML = `<span style="font-size:10px;color:var(--text3);font-style:italic;">No custom keywords yet</span>`;
+    return;
+  }
+  container.innerHTML = kws.map(kw =>
+    `<span class="kw-chip" onclick="removeKeyword('${id}','${kw}')" title="Click to remove">${kw} ×</span>`
+  ).join('');
+}
+
+// =============================================
+// BUSINESS IDEA TESTER — FULL INTELLIGENCE FLOW
+// =============================================
+async function testIdea(id) {
+  const n = NEIGHBORHOODS.find(x => x.id === id);
+  if(!n) return;
+  const input = document.getElementById(`idea-input-${id}`);
+  const result = document.getElementById(`idea-result-${id}`);
+  const btn = document.getElementById(`idea-btn-${id}`);
+  const localsPanel = document.getElementById(`locals-panel-${id}`);
+  const concept = input?.value.trim();
+  if(!concept) { input?.focus(); return; }
+
+  result.style.display = 'block';
+  result.innerHTML = `<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;"><div class="msg-typing" style="padding:0;display:inline-flex;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Analyzing market fit for ${n.name}...</div>`;
+  if(localsPanel) localsPanel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;">Scanning community sources for signals related to your idea...</div>`;
+  btn.disabled = true;
+
+  // Step 1: AI analysis — runs in parallel with Reddit scan
+  const aiPromise = callAI({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 900,
+    system: `You are PresageIQ, a Kansas City market intelligence analyst. Evaluate business concepts against real neighborhood data. Be honest — a bad fit is valuable intel. Be specific and direct. No generic advice.
+
+At the end of your analysis, on a new line, output exactly this format (used to scan community sources):
+KEYWORDS: word1, word2, word3, word4, word5
+(5-8 search keywords derived from the concept — e.g. wine bar, tapas, natural wine, date night, small plates)`,
+    messages: [{
+      role: 'user',
+      content: `Business concept: ${concept}
+
+Neighborhood: ${n.name} (${n.region} KC Metro)
+Opportunity Score: ${n.score}/100 | Population: ${n.pop} | Median Income: ${n.income} | Median Age: ${n.age}
+Summary: ${n.summary}
+Opportunity Gaps: ${n.gaps.map(g => `${g.title} (demand ${g.demand}%, saturation ${g.sat}%, viability ${g.via}%)`).join(' | ')}
+Risk Signals: ${n.risks.map(r => `[${r.level.toUpperCase()}] ${r.text}`).join(' | ')}
+
+Evaluate this concept for this specific neighborhood. Use this structure:
+**FIT SCORE: X/10** — one sentence why
+**WHAT WORKS** — 2-3 specific things going for this concept in ${n.name}
+**WHAT DOESN'T** — 1-2 honest concerns or misalignments with this market
+**ONE ADJUSTMENT** — the single most impactful change to improve fit here
+**COMPARABLE FIT** — one other KC neighborhood where this concept fits better or worse (brief)
+
+Reference actual neighborhood data. Be specific to ${n.name}.`
+    }]
+  });
+
+  // Step 2: Extract neighborhood search term
+  const nbhdTerm = getNeighborhoodSearchTerm(n);
+
+  // Run AI and first Reddit scan together
+  let aiText = '';
+  let extractedKeywords = [];
+
+  try {
+    const aiData = await aiPromise;
+    aiText = aiData.content?.[0]?.text || '';
+
+    // Extract keywords line from AI response
+    const kwMatch = aiText.match(/KEYWORDS:\s*([^\n]+)/i);
+    if(kwMatch) {
+      extractedKeywords = kwMatch[1].split(',').map(k => k.trim().toLowerCase()).filter(Boolean).slice(0, 8);
+      // Remove keywords line from displayed text
+      aiText = aiText.replace(/KEYWORDS:[^\n]*/i, '').trim();
+    }
+  } catch(e) {
+    aiText = '';
+  }
+
+  // Render AI result
+  if(result) {
+    if(aiText) {
+      result.innerHTML = aiText
+        .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text);">$1</strong>')
+        .replace(/\n\n/g, '<br><br>')
+        .replace(/\n/g, '<br>');
+    } else {
+      result.innerHTML = `<span style="color:var(--danger);font-size:11px;">Analysis failed — try again.</span>`;
+    }
+  }
+
+  btn.disabled = false;
+
+  // Step 3: Reddit scan using extracted keywords + neighborhood term
+  if(extractedKeywords.length > 0 && localsPanel) {
+    localsPanel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;">Pulling community signals for: ${extractedKeywords.slice(0,4).join(', ')}...</div>`;
+
+    const subs = ['kansascity', 'KCFoodScene', 'kansascitylocal'];
+    let allPosts = [];
+
+    // Search with neighborhood + top keywords combined
+    const searchQueries = [
+      `${nbhdTerm} ${extractedKeywords.slice(0, 3).join(' ')}`,
+      extractedKeywords.slice(0, 4).join(' ')
+    ];
+
+    try {
+      const fetches = [];
+      for(const sub of subs) {
+        for(const q of searchQueries) {
+          fetches.push(
+            fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance&t=year&limit=8`, {
+              headers: { 'Accept': 'application/json' }
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
+        }
+      }
+      const results = await Promise.allSettled(fetches);
+      const subCycle = [...subs, ...subs]; // matches the sub order above
+      results.forEach((res, i) => {
+        if(res.status === 'fulfilled' && res.value?.data?.children) {
+          const subIdx = Math.floor(i / searchQueries.length);
+          res.value.data.children.forEach(c => allPosts.push({ ...c.data, sub: subCycle[subIdx] }));
+        }
+      });
+
+      // Deduplicate, score by keyword relevance, filter moderation
+      const seen = new Set();
+      allPosts = allPosts
+        .filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; })
+        .filter(p => moderatePost(p.title, p.selftext || '') !== 'block')
+        .map(p => {
+          // Score by how many extracted keywords appear in title/body
+          const text = (p.title + ' ' + (p.selftext || '')).toLowerCase();
+          const kwHits = extractedKeywords.filter(kw => text.includes(kw)).length;
+          return { ...p, kwHits };
+        })
+        .sort((a, b) => b.kwHits - a.kwHits || b.score - a.score)
+        .slice(0, 8);
+
+      renderIdeaLocalsPanel(id, allPosts, extractedKeywords, concept);
+    } catch(e) {
+      if(localsPanel) localsPanel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;">Could not reach community sources right now. The analysis above is based on neighborhood data.</div>`;
+    }
+  }
+}
+
+function renderIdeaLocalsPanel(id, posts, keywords, concept) {
+  const panel = document.getElementById(`locals-panel-${id}`);
+  if(!panel) return;
+
+  // Sentiment classification based on keyword context
+  function classifyPost(post) {
+    const text = (post.title + ' ' + (post.selftext || '')).toLowerCase();
+    const positiveSignals = ['love','great','best','amazing','need','want','wish','would go','looking for','recommend','miss','finally','yes please','excited'];
+    const cautionSignals = ['bad','closed','gone','failed','never','waste','avoid','disappointed','overpriced','parking','too far','already have'];
+    const positiveScore = positiveSignals.filter(s => text.includes(s)).length;
+    const cautionScore = cautionSignals.filter(s => text.includes(s)).length;
+    if(positiveScore > cautionScore) return 'positive';
+    if(cautionScore > positiveScore) return 'caution';
+    return 'gap';
+  }
+
+  const sentimentConfig = {
+    positive: { label: 'Positive Signal', color: 'var(--accent)', bg: 'rgba(0,212,170,.08)', border: 'rgba(0,212,170,.2)', lineColor: 'var(--accent)' },
+    caution:  { label: 'Caution Signal',  color: 'var(--warn)',   bg: 'rgba(245,166,35,.07)', border: 'rgba(245,166,35,.18)', lineColor: 'var(--warn)' },
+    gap:      { label: 'Gap Signal',      color: 'var(--accent2)',bg: 'rgba(0,153,255,.07)', border: 'rgba(0,153,255,.18)', lineColor: 'var(--accent2)' }
+  };
+
+  if(posts.length === 0) {
+    panel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;">No community posts matched this concept. Try a broader idea or different keywords.</div>`;
+    return;
+  }
+
+  const kwLabel = keywords.slice(0, 5).join(' · ');
+  let html = `<div style="font-size:9px;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase;">Scanning for: ${escapeHtml(kwLabel)}</div>`;
+
+  posts.forEach(p => {
+    const sentiment = classifyPost(p);
+    const cfg = sentimentConfig[sentiment];
+    const age = timeAgo(p.created_utc);
+    const snippet = p.selftext ? p.selftext.replace(/\n+/g, ' ').substring(0, 160) + (p.selftext.length > 160 ? '...' : '') : '';
+    const url = `https://reddit.com${p.permalink}`;
+
+    html += `
+      <div class="local-quote" style="cursor:pointer;" onclick="window.open('${escapeAttr(url)}','_blank')">
+        <div class="local-quote-bar">
+          <div class="local-quote-line" style="background:${cfg.lineColor};"></div>
+          <div class="local-quote-body" style="flex:1;">
+            <div class="local-quote-text">${escapeHtml(p.title)}</div>
+            ${snippet ? `<div style="font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4;font-style:italic;">${escapeHtml(snippet)}</div>` : ''}
+            <div style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap;">
+              <span style="font-size:9px;color:#ff4500;">r/${p.sub}</span>
+              <span style="font-size:9px;color:var(--text3);">↑${p.score > 999 ? (p.score/1000).toFixed(1)+'k' : p.score}</span>
+              <span style="font-size:9px;color:var(--text3);">${age}</span>
+              <span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${cfg.bg};border:1px solid ${cfg.border};color:${cfg.color};">${cfg.label}</span>
+              <span style="font-size:9px;color:var(--accent2);margin-left:auto;">↗ View thread</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  panel.innerHTML = html;
+}
+
+// =============================================
+// IMPORT / ANALYZE
+// =============================================
+async function analyzeImport(){
+  const text = document.getElementById('import-text').value.trim();
+  const nbhdId = document.getElementById('import-nbhd').value;
+  const source = document.getElementById('import-source').value;
+  const btn = document.getElementById('analyze-btn');
+  const results = document.getElementById('import-results');
+
+  if(!text){ alert('Please paste some text to analyze.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  results.innerHTML = `<div class="result-card"><div class="result-header"><span class="result-label">◎ Processing Signal</span></div><div class="result-body"><div class="msg-typing" style="padding:0;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div></div></div>`;
+
+  const nbhd = NEIGHBORHOODS.find(n=>n.id===nbhdId);
+  const nbhdContext = nbhd ? `Target neighborhood: ${nbhd.name} (${nbhd.region} KC Metro, Score: ${nbhd.score}/100, Summary: ${nbhd.summary})` : 'No specific neighborhood targeted — identify the most likely neighborhood match.';
+
+  const sourceLabels = {
+    facebook:'Facebook Group', nextdoor:'Nextdoor', reddit:'Reddit',
+    forum:'Neighborhood Forum', google_reviews:'Google Reviews', yelp:'Yelp Reviews',
+    instagram:'Instagram', tiktok:'TikTok', youtube:'YouTube', other:'Unknown Source'
+  };
+  const sourceLabel = sourceLabels[source] || source;
+
+  const systemPrompt = `You are PresageIQ, analyzing community content for Kansas City market intelligence.
+
+${nbhdContext}
+Source platform: ${sourceLabel}
+
+Analyze the provided text using the three-layer methodology:
+1. Consumer Sentiment — What are people complaining about, praising, or explicitly asking for?
+2. Keyword Clustering — What types of businesses, services, or experiences are mentioned as missing or desired?
+3. Gap Signals — What specific unmet market needs emerge?
+
+Social media context: If the source is Instagram, TikTok, or YouTube, weight visual/aspirational signals (aesthetic demand, lifestyle gaps, trending formats) alongside practical gaps.
+
+Content note: Do NOT surface or amplify any violent, criminal, or graphic content in your output. If the text contains such content, note only the relevant market/safety impact in risk_flags (e.g., "elevated safety concerns may affect foot traffic") without repeating graphic details.
+
+Respond in this exact JSON format:
+{
+  "summary": "2-3 sentence plain English summary of what the signal indicates for a business entering this market",
+  "neighborhood_match": "Best neighborhood match if not specified, or confirm the targeted neighborhood",
+  "gap_signals": ["signal 1", "signal 2", "signal 3"],
+  "demand_indicators": ["specific demand mentioned 1", "specific demand mentioned 2"],
+  "risk_flags": ["any risk or counterpoint found in text — market-relevant only, no graphic content"],
+  "signal_strength": "HIGH / MEDIUM / LOW",
+  "recommended_categories": ["business category 1", "business category 2"]
+}
+
+Return only valid JSON, no other text.`;
+
+  try {
+    const data = await callAI({
+      model:'claude-sonnet-4-6',
+      max_tokens:1000,
+      system:systemPrompt,
+      messages:[{role:'user',content:text}]
+    });
+    const raw = data.content?.[0]?.text || '{}';
+    let parsed;
+    try{ parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch(e){ parsed = null; }
+
+    if(parsed){
+      const signalColor = parsed.signal_strength==='HIGH'?'ntag-opp':parsed.signal_strength==='MEDIUM'?'ntag-warn':'ntag-info';
+      const gapsHTML = (parsed.gap_signals||[]).map(s=>`<span class="signal-badge sig-gap">${s}</span>`).join('');
+      const demandHTML = (parsed.demand_indicators||[]).map(s=>`<span class="signal-badge sig-demand">${s}</span>`).join('');
+      const riskHTML = (parsed.risk_flags||[]).map(s=>`<span class="signal-badge sig-risk">${s}</span>`).join('');
+      const catHTML = (parsed.recommended_categories||[]).map(s=>`<span class="signal-badge sig-neutral">${s}</span>`).join('');
+
+      results.innerHTML = `
+        <div class="result-card fade-in">
+          <div class="result-header">
+            <span class="result-label">◎ Signal Analysis Complete</span>
+            <span class="result-nbhd">${parsed.neighborhood_match||nbhd?.name||'Unassigned'} · <span class="ntag ${signalColor}" style="font-size:10px;padding:2px 6px;">${parsed.signal_strength} SIGNAL</span></span>
+          </div>
+          <div class="result-body">
+            <div style="margin-bottom:12px;">${parsed.summary}</div>
+            ${gapsHTML||demandHTML||riskHTML||catHTML ? `
+            <div style="margin-bottom:6px;font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Gap Signals</div>
+            <div class="signal-badges" style="margin-bottom:12px;">${gapsHTML}</div>
+            <div style="margin-bottom:6px;font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Demand Indicators</div>
+            <div class="signal-badges" style="margin-bottom:12px;">${demandHTML}</div>
+            ${riskHTML ? `<div style="margin-bottom:6px;font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Risk Flags</div><div class="signal-badges" style="margin-bottom:12px;">${riskHTML}</div>` : ''}
+            <div style="margin-bottom:6px;font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;">Recommended Categories</div>
+            <div class="signal-badges">${catHTML}</div>` : ''}
+          </div>
+        </div>`;
+
+      // Save to history
+      importHistory.push({
+        nbhd: parsed.neighborhood_match||nbhd?.name||'Unknown',
+        source, strength: parsed.signal_strength,
+        summary: parsed.summary,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      renderImportHistory();
+    } else {
+      results.innerHTML = `<div class="result-card"><div class="result-header"><span class="result-label">Analysis Result</span></div><div class="result-body">${raw}</div></div>`;
+    }
+  } catch(e) {
+    let errMsg;
+    if(e.message === 'SESSION_LIMIT'){
+      errMsg = `You've reached the session AI limit (${SESSION_LIMIT} calls). <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add your OpenAI API key</span> to continue without limits.`;
+    } else if(e.message === 'CREDITS'){
+      errMsg = `The shared AI service is temporarily at capacity. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add your OpenAI API key</span> to continue.`;
+    } else if(e.message === 'RATE_LIMITED'){
+      errMsg = 'Too many requests from this connection. Please wait a few minutes and try again.';
+    } else if(e.message === 'NO_KEY'){
+      errMsg = `AI service unavailable. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="showApiModal()">Add a backup OpenAI key</span> to continue.`;
+    } else if(e.message === 'NETWORK'){
+      errMsg = 'Network error reaching the AI service. Check your connection and try again.';
+    } else {
+      errMsg = 'Unexpected error. Please try again.';
+    }
+    results.innerHTML = `<div class="result-card"><div class="result-header"><span class="result-label" style="color:var(--danger);">◎ Service Unavailable</span></div><div class="result-body">${errMsg}</div></div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Analyze Signal';
+}
+
+function clearImport(){
+  document.getElementById('import-text').value = '';
+  document.getElementById('import-results').innerHTML = '';
+}
+
+function renderImportHistory(){
+  const hist = document.getElementById('import-history');
+  const list = document.getElementById('history-list');
+  if(importHistory.length===0){ hist.style.display='none'; return; }
+  hist.style.display = 'block';
+  list.innerHTML = importHistory.slice().reverse().map(h=>`
+    <div class="history-item">
+      <div class="history-left">
+        <div class="history-title">${h.summary.substring(0,80)}${h.summary.length>80?'...':''}</div>
+        <div class="history-meta">${h.nbhd} · ${h.source} · ${h.timestamp}</div>
+      </div>
+      <span class="history-score">${h.strength}</span>
+    </div>`).join('');
+
+  // Refresh locals panel for active neighborhood if it's currently visible
+  if(activeNbhd) renderLocalsPanel(activeNbhd, redditCache[activeNbhd]?.posts || []);
+}
+
+// =============================================
+// KEYWORD SEARCH
+// =============================================
+async function searchKeywords(id) {
+  const input = document.getElementById(`kw-input-${id}`);
+  const results = document.getElementById(`kw-results-${id}`);
+  const btn = document.getElementById(`kw-btn-${id}`);
+  const query = (input?.value||'').trim();
+  if(!query) return;
+
+  const n = NEIGHBORHOODS.find(x => x.id === id);
+  if(!n) return;
+  const nbhdTerm = getNeighborhoodSearchTerm(n);
+
+  btn.disabled = true;
+  results.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">Searching Reddit...</div>';
+
+  const allPosts = [];
+  const subs = ['kansascity', 'KCFoodScene', 'kansascitylocal'];
+  const searchTerm = `${nbhdTerm} ${query}`;
+
+  for(const sub of subs) {
+    try {
+      const resp = await fetch(
+        `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(searchTerm)}&restrict_sr=1&sort=relevance&t=year&limit=10`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if(!resp.ok) continue;
+      const data = await resp.json();
+      const posts = (data?.data?.children || []).map(c => ({ ...c.data, sub }));
+      allPosts.push(...posts);
+    } catch(e) {}
+  }
+
+  btn.disabled = false;
+
+  if(allPosts.length === 0) {
+    results.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">No posts found. Try broader keywords or a different term.</div>';
+    return;
+  }
+
+  // Deduplicate and sort by relevance/score
+  const seen = new Set();
+  const unique = allPosts.filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; });
+  unique.sort((a, b) => b.score - a.score);
+  const top = unique.slice(0, 10);
+
+  results.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:8px;letter-spacing:.5px;">${top.length} result${top.length!==1?'s':''} for "${escapeHtml(query)}" in ${n.name}</div>` +
+    top.map(p => {
+      const age = timeAgo(p.created_utc);
+      const score = p.score > 999 ? (p.score/1000).toFixed(1)+'k' : p.score;
+      const url = `https://reddit.com${p.permalink}`;
+      const snippet = p.selftext ? p.selftext.replace(/\n+/g,' ').substring(0, 180) + (p.selftext.length > 180 ? '...' : '') : '';
+      return `
+        <div class="kw-result-card" onclick="window.open('${escapeAttr(url)}','_blank')">
+          <div class="kw-result-title">${escapeHtml(p.title)}</div>
+          <div class="kw-result-meta">
+            <span style="color:#ff4500;">r/${p.sub}</span>
+            <span>↑${score}</span>
+            <span>${age}</span>
+            <span style="margin-left:auto;color:var(--accent2);">↗ Open</span>
+          </div>
+          ${snippet ? `<div class="kw-result-body">${escapeHtml(snippet)}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+// =============================================
+// VIEW SWITCHING
+// =============================================
+function toggleMapView(){
+  const btn = document.getElementById('map-toggle-btn');
+  if(currentView === 'map'){
+    switchView('dashboard');
+    if(btn) btn.classList.remove('active');
+  } else {
+    switchView('map');
+    if(btn) btn.classList.add('active');
+  }
+}
+
+function switchView(view, el){
+  currentView = view;
+  document.getElementById('dashboard-view').style.display = view==='dashboard'?'block':'none';
+  document.getElementById('import-view').style.display = view==='import'?'block':'none';
+  const mapView = document.getElementById('map-view');
+  mapView.style.display = view==='map'?'flex':'none';
+  if(view==='map') setTimeout(initMap, 50);
+}
+
+// =============================================
+// START
+// =============================================
+function init(){
+  document.getElementById('api-modal').style.display = 'none';
+  document.getElementById('api-dot').className = 'api-dot-active';
+  document.getElementById('api-status-label').textContent = 'API Active · Proxy';
+  renderSidebar();
+  populateImportSelect();
+}
+
+init();
+</script>
+</body>
+</html>

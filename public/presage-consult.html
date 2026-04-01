@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Presage Consult — Towns & Walley Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0a0d12;--bg2:#0f1319;--bg3:#151c25;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#eef1f4;--text2:#8a9aaa;--text3:#3d5060;
+  --gold:#c8963e;--gold2:#e8b86d;--teal:#3d9e8c;--teal2:#52c5b0;
+  --font-display:'Syne',sans-serif;--font-serif:'Playfair Display',serif;--font-mono:'DM Mono',monospace;
+}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:14px;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.5;}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:60px;background:rgba(10,13,18,0.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--gold),transparent 50%);}
+.logo{font-family:var(--font-display);font-size:15px;font-weight:800;}
+.logo span{color:var(--gold);}
+.logo-rule{font-size:9px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:1px;}
+.nav-links{display:flex;align-items:center;gap:28px;}
+.nav-link{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);text-decoration:none;transition:color .2s;}
+.nav-link:hover{color:var(--gold);}
+.nav-cta{font-size:10px;letter-spacing:1px;text-transform:uppercase;background:transparent;border:1px solid var(--gold);color:var(--gold);padding:7px 16px;border-radius:3px;cursor:pointer;transition:all .2s;font-family:var(--font-mono);text-decoration:none;}
+.nav-cta:hover{background:rgba(200,150,62,.1);}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:120px 48px 80px;position:relative;overflow:hidden;}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 80% 60% at 50% 50%,black 30%,transparent 100%);}
+.glow{position:absolute;top:-200px;right:-200px;width:700px;height:700px;background:radial-gradient(circle,rgba(200,150,62,.07) 0%,transparent 70%);pointer-events:none;}
+.glow2{position:absolute;bottom:-100px;left:-100px;width:500px;height:500px;background:radial-gradient(circle,rgba(61,158,140,.05) 0%,transparent 70%);pointer-events:none;}
+.eyebrow{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:20px;display:flex;align-items:center;gap:10px;}
+.eyebrow::before{content:'';width:24px;height:1px;background:var(--gold);}
+.h1{font-family:var(--font-display);font-size:clamp(44px,6.5vw,82px);font-weight:800;letter-spacing:-3px;line-height:.95;margin-bottom:10px;max-width:820px;}
+.h1-italic{font-family:var(--font-serif);font-style:italic;font-weight:400;color:var(--gold2);display:block;letter-spacing:-2px;}
+.hero-sub{font-size:14px;color:var(--text2);line-height:1.8;max-width:540px;margin:28px 0 48px;}
+.hero-sub strong{color:var(--text);}
+.actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.btn{display:inline-block;font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:1px;text-transform:uppercase;padding:14px 28px;border-radius:3px;cursor:pointer;transition:all .25s;text-decoration:none;}
+.btn-gold{background:var(--gold);color:#0a0d12;border:none;}
+.btn-gold:hover{background:var(--gold2);transform:translateY(-1px);}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2);}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold);}
+section{padding:96px 48px;}
+.stag{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.stag::before{content:'◎';}
+.stag.left{justify-content:flex-start;}
+.stag.center{justify-content:center;}
+.sh{font-family:var(--font-display);font-size:clamp(24px,3.5vw,40px);font-weight:800;letter-spacing:-1.5px;line-height:1.05;margin-bottom:12px;}
+.sd{font-size:13px;color:var(--text2);line-height:1.8;}
+/* TIERS */
+.tiers-wrap{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+.tiers-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:940px;margin:48px auto 0;}
+.tc{background:var(--bg);border:1px solid var(--border2);border-radius:8px;overflow:hidden;position:relative;transition:transform .25s;}
+.tc:hover{transform:translateY(-3px);}
+.tc.feat{border-color:rgba(200,150,62,.35);}
+.tc.feat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--teal2));}
+.tc-badge{position:absolute;top:14px;right:14px;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;background:rgba(200,150,62,.14);color:var(--gold);border:1px solid rgba(200,150,62,.28);padding:3px 8px;border-radius:2px;}
+.tc-head{padding:28px 28px 20px;}
+.tc-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:6px;}
+.tc-name{font-family:var(--font-display);font-size:22px;font-weight:800;margin-bottom:5px;}
+.tc-tag{font-size:12px;color:var(--text2);line-height:1.5;}
+.tc-price{display:flex;align-items:flex-end;gap:6px;margin-top:18px;padding-top:18px;border-top:1px solid var(--border);}
+.tc-price-num{font-family:var(--font-display);font-size:38px;font-weight:800;color:var(--gold);letter-spacing:-2px;line-height:1;}
+.tc-price-sub{font-size:11px;color:var(--text3);padding-bottom:3px;}
+.tc-body{padding:0 28px 28px;}
+.tc-ilab{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:12px;}
+.ti{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px;font-size:12px;color:var(--text2);line-height:1.5;}
+.ti::before{content:'✓';color:var(--teal2);flex-shrink:0;font-size:11px;margin-top:1px;}
+.ti.hl{color:var(--text);}
+.tcta{display:block;text-align:center;margin-top:20px;padding:11px;border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .25s;text-decoration:none;}
+.tcta-gold{background:var(--gold);color:#0a0d12;}
+.tcta-gold:hover{background:var(--gold2);}
+.tcta-out{background:transparent;border:1px solid var(--border2);color:var(--text2);}
+.tcta-out:hover{border-color:var(--gold);color:var(--gold);}
+/* AUDIT */
+.audit-grid{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start;margin-top:52px;max-width:960px;}
+.modules{display:flex;flex-direction:column;gap:10px;}
+.mod{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:20px 22px;position:relative;overflow:hidden;transition:border .2s;}
+.mod:hover{border-color:var(--border2);}
+.mod::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);opacity:0;transition:opacity .2s;}
+.mod:hover::before{opacity:1;}
+.mod-num{font-size:9px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;}
+.mod-title{font-family:var(--font-display);font-size:14px;font-weight:700;margin-bottom:5px;}
+.mod-desc{font-size:12px;color:var(--text2);line-height:1.65;}
+.mod-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px;}
+.mtag{font-size:9px;padding:2px 6px;border-radius:2px;background:rgba(61,158,140,.07);border:1px solid rgba(61,158,140,.18);color:var(--teal2);}
+.callout{background:var(--bg2);border:1px solid rgba(200,150,62,.2);border-radius:8px;padding:24px;margin-bottom:18px;}
+.callout-lab{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;}
+.callout-text{font-size:12px;color:var(--text2);line-height:1.8;}
+.callout-text strong{color:var(--text);}
+.timeline{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:22px;}
+.tl-lab{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:16px;}
+.tl-step{display:flex;gap:12px;margin-bottom:14px;}
+.tl-step:last-child{margin-bottom:0;}
+.tl-m{display:flex;flex-direction:column;align-items:center;flex-shrink:0;}
+.tl-dot{width:9px;height:9px;border-radius:50%;background:var(--gold);}
+.tl-line{width:1px;flex:1;background:var(--border2);margin:3px 0;}
+.tl-step:last-child .tl-line{display:none;}
+.tl-title{font-size:12px;color:var(--text);margin-bottom:2px;}
+.tl-desc{font-size:11px;color:var(--text3);line-height:1.5;}
+/* PROCESS */
+.proc-wrap{background:var(--bg2);border-top:1px solid var(--border);}
+.proc-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:2px;margin-top:48px;}
+.ps{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:22px 16px;text-align:center;transition:border .2s;}
+.ps:hover{border-color:rgba(200,150,62,.3);}
+.ps-num{width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:13px;font-weight:800;color:var(--gold);margin:0 auto 12px;}
+.ps-title{font-family:var(--font-display);font-size:12px;font-weight:700;margin-bottom:5px;}
+.ps-desc{font-size:10px;color:var(--text2);line-height:1.6;}
+/* COMPARE */
+.comp-table{max-width:800px;margin:44px auto 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.comp-head{display:grid;grid-template-columns:2fr 1fr 1fr;background:var(--bg3);border-bottom:1px solid var(--border);}
+.ch{padding:14px 18px;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);}
+.ch.gold{color:var(--gold);}
+.cr{display:grid;grid-template-columns:2fr 1fr 1fr;border-bottom:1px solid var(--border);}
+.cr:last-child{border-bottom:none;}
+.cr:hover{background:var(--bg3);}
+.cc{padding:12px 18px;font-size:12px;color:var(--text2);display:flex;align-items:center;}
+.cc.feat{color:var(--text);}
+.chk{color:var(--teal2);}
+.dsh{color:var(--text3);}
+/* FORM */
+.form-wrap{background:var(--bg2);border-top:1px solid var(--border);}
+.finner{max-width:700px;margin:0 auto;}
+.form-intro{margin-bottom:44px;}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.ff{display:flex;flex-direction:column;gap:5px;}
+.ff.full{grid-column:1/-1;}
+.fl{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);}
+.fi,.fs,.fta{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 13px;border-radius:4px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;width:100%;}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(200,150,62,.07);}
+.fi::placeholder,.fta::placeholder{color:var(--text3);}
+.fs{appearance:none;cursor:pointer;}
+.fs option{background:var(--bg3);}
+.fta{resize:vertical;min-height:110px;line-height:1.6;}
+.fsub{width:100%;background:var(--gold);border:none;color:#0a0d12;padding:15px;border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .25s;margin-top:6px;}
+.fsub:hover{background:var(--gold2);transform:translateY(-1px);}
+.fsub:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.fnote{font-size:10px;color:var(--text3);text-align:center;margin-top:10px;line-height:1.6;}
+.fsuccess{display:none;text-align:center;padding:48px 24px;}
+.fsuccess-icon{font-size:30px;margin-bottom:14px;}
+.fsuccess-title{font-family:var(--font-display);font-size:20px;font-weight:700;margin-bottom:7px;}
+.fsuccess-desc{font-size:12px;color:var(--text2);line-height:1.7;}
+footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;}
+.flogo{font-family:var(--font-display);font-size:13px;font-weight:800;}
+.flogo span{color:var(--gold);}
+.flink{font-size:10px;color:var(--text3);text-decoration:none;transition:color .2s;}
+.flink:hover{color:var(--gold);}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+.fu{animation:fadeUp .7s ease forwards;}
+.fu1{animation-delay:.1s;opacity:0;}.fu2{animation-delay:.2s;opacity:0;}.fu3{animation-delay:.35s;opacity:0;}.fu4{animation-delay:.5s;opacity:0;}
+@media(max-width:768px){
+  .topbar{padding:0 20px;}.nav-links{display:none;}
+  section,.tiers-wrap,.proc-wrap,.form-wrap{padding:60px 20px;}
+  .tiers-grid,.audit-grid,.fg{grid-template-columns:1fr;}
+  .proc-steps{grid-template-columns:1fr 1fr;}
+  footer{padding:24px 20px;}
+}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div><div class="logo">Presage<span>IQ</span></div><div class="logo-rule">Towns &amp; Walley Intelligence</div></div>
+  <div class="nav-links">
+    <a href="#services" class="nav-link">Services</a>
+    <a href="#audit" class="nav-link">Presage Audit</a>
+    <a href="#process" class="nav-link">Process</a>
+    <a href="#contact" class="nav-cta">Book a Session</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-grid"></div><div class="glow"></div><div class="glow2"></div>
+  <div class="eyebrow fu fu1">Presage Consult · Towns &amp; Walley Intelligence</div>
+  <h1 class="h1 fu fu2">Intelligence that<br><span class="h1-italic">moves the needle.</span></h1>
+  <p class="hero-sub fu fu3">Whether you're entering a new market or optimizing an existing business — <strong>Presage Consult</strong> delivers the data, analysis, and strategic clarity that changes what you do next.</p>
+  <div class="actions fu fu4">
+    <a href="#services" class="btn btn-gold">See Our Services →</a>
+    <a href="#contact" class="btn btn-outline">Book a Session</a>
+  </div>
+</section>
+
+<!-- TIERS -->
+<section class="tiers-wrap" id="services">
+  <div style="text-align:center;max-width:580px;margin:0 auto;">
+    <div class="stag center">Services</div>
+    <h2 class="sh">Two tiers. One intelligence platform.</h2>
+    <p class="sd">Starting a business or running one — PresageIQ gives you the market intelligence to make the right move.</p>
+  </div>
+  <div class="tiers-grid">
+    <div class="tc">
+      <div class="tc-head">
+        <div class="tc-label">Tier 1</div>
+        <div class="tc-name">Presage Consult</div>
+        <div class="tc-tag">For entrepreneurs testing a concept before they invest. One session, structured analysis, clear verdict.</div>
+        <div class="tc-price"><div class="tc-price-num">$500</div><div class="tc-price-sub">per session</div></div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-ilab">What's Included</div>
+        <div class="ti">60-minute live intelligence session</div>
+        <div class="ti">Concept fit analysis — demand, saturation, viability</div>
+        <div class="ti">Live community signal extraction from Reddit &amp; reviews</div>
+        <div class="ti">Competitive landscape overview</div>
+        <div class="ti">Presage Brief — written PDF summary within 24hrs</div>
+        <div class="ti">Neighborhood analysis printout</div>
+        <a href="#contact" class="tcta tcta-out" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Consult — $500'},100)">Book Presage Consult →</a>
+      </div>
+    </div>
+    <div class="tc feat">
+      <div class="tc-badge">Most Comprehensive</div>
+      <div class="tc-head">
+        <div class="tc-label">Tier 2</div>
+        <div class="tc-name">Presage Audit</div>
+        <div class="tc-tag">For existing businesses ready to optimize. Deep analysis of your operations, market position, menu, inventory, and competitors.</div>
+        <div class="tc-price"><div class="tc-price-num">$2,500</div><div class="tc-price-sub">per engagement</div></div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-ilab">What's Included</div>
+        <div class="ti hl">Menu &amp; product performance analysis</div>
+        <div class="ti hl">Inventory &amp; supply chain review</div>
+        <div class="ti hl">Competitor gap analysis — what they win on, where you can compete</div>
+        <div class="ti hl">Review sentiment extraction across all online sources</div>
+        <div class="ti hl">Strategic recommendations — highlight, fix, remove, or launch</div>
+        <div class="ti">Presage Brief Extended — full written audit report</div>
+        <div class="ti">Multiple sessions: intake + full session + 30-day follow-up</div>
+        <a href="#contact" class="tcta tcta-gold" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Audit — $2,500'},100)">Book Presage Audit →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AUDIT BREAKDOWN -->
+<section id="audit">
+  <div style="max-width:960px;">
+    <div class="stag left">Presage Audit — Deep Dive</div>
+    <h2 class="sh">What a full audit actually looks like.</h2>
+  </div>
+  <div class="audit-grid">
+    <div class="modules">
+      <div class="mod">
+        <div class="mod-num">Module 01</div>
+        <div class="mod-title">Menu &amp; Product Performance</div>
+        <div class="mod-desc">We scan all available reviews, social mentions, and community posts for item-level signals. What's praised, what's ignored, what's being requested but not offered. If your best item isn't on the front of your menu or ads — that changes. If your worst item is dragging your brand — we tell you whether to fix, relaunch, or cut it.</div>
+        <div class="mod-tags"><span class="mtag">Review Extraction</span><span class="mtag">Item Scoring</span><span class="mtag">Launch Strategy</span></div>
+      </div>
+      <div class="mod">
+        <div class="mod-num">Module 02</div>
+        <div class="mod-title">Inventory &amp; Supply Chain</div>
+        <div class="mod-desc">We review your vendor structure for consolidation opportunities, pricing misalignment, and local sourcing gaps. We identify whether you're overpaying, undersourcing regionally, or missing KC-area farms and producers that could reduce cost and increase quality simultaneously.</div>
+        <div class="mod-tags"><span class="mtag">Vendor Analysis</span><span class="mtag">Cost Review</span><span class="mtag">Local Sourcing</span></div>
+      </div>
+      <div class="mod">
+        <div class="mod-num">Module 03</div>
+        <div class="mod-title">Competitor Gap Analysis</div>
+        <div class="mod-desc">We map what competitors are winning on and identify what they're leaving open. If a business two blocks away has a fan-favorite that your menu doesn't touch — we surface it, score the demand, and build a launch strategy for your version. Their weakness is your opportunity.</div>
+        <div class="mod-tags"><span class="mtag">Competitive Mapping</span><span class="mtag">Gap Identification</span><span class="mtag">Opportunity Scoring</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="callout">
+        <div class="callout-lab">Why $2,500?</div>
+        <div class="callout-text">Comparable business intelligence audits from traditional consultants run <strong>$10,000–$25,000</strong>. Food service consultants charge <strong>$3,000–$8,000</strong> for narrower scope. Presage Audit delivers equivalent analytical depth — powered by PresageIQ's live data platform — at a price accessible to independent operators who need it most.</div>
+      </div>
+      <div class="timeline">
+        <div class="tl-lab">Engagement Timeline</div>
+        <div class="tl-step"><div class="tl-m"><div class="tl-dot"></div><div class="tl-line"></div></div><div><div class="tl-title">Pre-Audit Intake</div><div class="tl-desc">You send menu, vendor list, and available data ahead of time. We prep the PresageIQ analysis before we meet.</div></div></div>
+        <div class="tl-step"><div class="tl-m"><div class="tl-dot"></div><div class="tl-line"></div></div><div><div class="tl-title">On-Site or Remote Session</div><div class="tl-desc">Full audit walkthrough — module by module, findings discussed, recommendations refined live.</div></div></div>
+        <div class="tl-step"><div class="tl-m"><div class="tl-dot"></div><div class="tl-line"></div></div><div><div class="tl-title">Presage Brief Extended</div><div class="tl-desc">Full written report delivered within 48 hours. Structured for your team, investors, or your own execution plan.</div></div></div>
+        <div class="tl-step"><div class="tl-m"><div class="tl-dot"></div></div><div><div class="tl-title">30-Day Follow-Up</div><div class="tl-desc">Check-in call to review implementation and answer questions as changes go live.</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section class="proc-wrap" id="process">
+  <div class="stag left">How It Works</div>
+  <h2 class="sh">From request to report.</h2>
+  <div class="proc-steps">
+    <div class="ps"><div class="ps-num">01</div><div class="ps-title">Submit Request</div><div class="ps-desc">Tell us your concept or business, your neighborhood, and what you're trying to figure out.</div></div>
+    <div class="ps"><div class="ps-num">02</div><div class="ps-title">We Prep</div><div class="ps-desc">We run PresageIQ analysis ahead of time so the session is focused on insight, not setup.</div></div>
+    <div class="ps"><div class="ps-num">03</div><div class="ps-title">Live Session</div><div class="ps-desc">We walk through findings together. You ask, we dig. Video call or in-person in KC.</div></div>
+    <div class="ps"><div class="ps-num">04</div><div class="ps-title">Brief Delivered</div><div class="ps-desc">Written summary or full audit report within 24–48 hours. Ready for your files or investors.</div></div>
+    <div class="ps"><div class="ps-num">05</div><div class="ps-title">Follow-Up</div><div class="ps-desc">Audit clients get a 30-day check-in. Questions as you implement are part of the engagement.</div></div>
+  </div>
+</section>
+
+<!-- COMPARE -->
+<section>
+  <div class="stag center">Compare</div>
+  <h2 class="sh" style="text-align:center;">Which tier is right for you?</h2>
+  <div class="comp-table">
+    <div class="comp-head"><div class="ch">Feature</div><div class="ch">Consult · $500</div><div class="ch gold">Audit · $2,500</div></div>
+    <div class="cr"><div class="cc feat">Best for</div><div class="cc">Pre-launch entrepreneurs</div><div class="cc">Existing businesses</div></div>
+    <div class="cr"><div class="cc feat">Neighborhood market analysis</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Concept fit scoring</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Community signal extraction</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Presage Brief (PDF)</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓ Extended</span></div></div>
+    <div class="cr"><div class="cc feat">Menu &amp; product analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Inventory &amp; supply chain review</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Competitor gap analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">30-day follow-up call</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Sessions included</div><div class="cc">1 × 60 min</div><div class="cc">Intake + Full + Follow-up</div></div>
+  </div>
+</section>
+
+<!-- FORM -->
+<section class="form-wrap" id="contact">
+  <div class="finner">
+    <div class="form-intro">
+      <div class="stag left">Book a Session</div>
+      <h2 class="sh">Ready to get started?</h2>
+      <p class="sd">Fill out the form and we'll be in touch within 24 hours to confirm your session.</p>
+    </div>
+    <div id="contact-form">
+      <div class="fg">
+        <div class="ff"><label class="fl">Your Name</label><input class="fi" type="text" id="f-name" placeholder="First and last name"/></div>
+        <div class="ff"><label class="fl">Email Address</label><input class="fi" type="email" id="f-email" placeholder="your@email.com"/></div>
+        <div class="ff"><label class="fl">Service</label>
+          <select class="fs" id="f-service">
+            <option value="">— Select a service —</option>
+            <option value="Presage Consult — $500">Presage Consult — $500</option>
+            <option value="Presage Audit — $2,500">Presage Audit — $2,500</option>
+            <option value="Not sure yet">Not sure yet — help me decide</option>
+          </select>
+        </div>
+        <div class="ff"><label class="fl">Business / Concept</label><input class="fi" type="text" id="f-concept" placeholder="e.g. Wine bar, existing restaurant, retail..."/></div>
+        <div class="ff"><label class="fl">Target Neighborhood</label>
+          <select class="fs" id="f-neighborhood">
+            <option value="">— Select a neighborhood —</option>
+            <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+            <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+            <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+            <option>Grandview</option><option>East Side / Prospect</option>
+            <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+            <option>North KC</option><option>Gladstone</option><option>Independence</option>
+            <option>Lee's Summit</option><option>Overland Park</option><option>Olathe</option>
+            <option>Blue Springs</option><option>Raytown</option><option>Merriam</option>
+            <option>Shawnee</option><option>Platte City</option>
+            <option>Not sure yet — need help deciding</option>
+          </select>
+        </div>
+        <div class="ff"><label class="fl">Phone (Optional)</label><input class="fi" type="tel" id="f-phone" placeholder="(816) 555-0100"/></div>
+        <div class="ff full"><label class="fl">Tell Us More</label>
+          <textarea class="fta" id="f-message" placeholder="Presage Consult: describe your concept and what you want answered. Presage Audit: tell us about your business — type, size, biggest challenge, and what you want to change."></textarea>
+        </div>
+      </div>
+      <button class="fsub" id="submit-btn" onclick="submitForm()">Submit Request →</button>
+      <p class="fnote">We respond within 24 hours. No charge until we've connected and confirmed your session.</p>
+    </div>
+    <div class="fsuccess" id="form-success">
+      <div class="fsuccess-icon">◎</div>
+      <div class="fsuccess-title">Request received.</div>
+      <div class="fsuccess-desc">We'll be in touch within 24 hours to confirm your session.<br>A confirmation email is on its way to you now.</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div><div class="flogo">Presage<span>IQ</span></div><div style="font-size:9px;color:var(--text3);margin-top:3px;letter-spacing:.5px;">Towns &amp; Walley Intelligence · Kansas City</div></div>
+  <a href="https://walley-303.github.io/presageiq/" class="flink" target="_blank">PresageIQ Platform →</a>
+  <div style="font-size:10px;color:var(--text3);">© 2025 Towns &amp; Walley Intelligence</div>
+</footer>
+
+<script>
+document.querySelectorAll('a[href^="#"]').forEach(a=>{
+  a.addEventListener('click',e=>{e.preventDefault();const t=document.querySelector(a.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth',block:'start'});});
+});
+
+async function submitForm(){
+  const name=document.getElementById('f-name').value.trim();
+  const email=document.getElementById('f-email').value.trim();
+  const service=document.getElementById('f-service').value;
+  const concept=document.getElementById('f-concept').value.trim();
+  const neighborhood=document.getElementById('f-neighborhood').value;
+  const phone=document.getElementById('f-phone').value.trim();
+  const message=document.getElementById('f-message').value.trim();
+  const btn=document.getElementById('submit-btn');
+  if(!name||!email||!service||!concept){alert('Please fill in your name, email, service, and business/concept.');return;}
+  if(!email.includes('@')){alert('Please enter a valid email address.');return;}
+  btn.disabled=true;btn.textContent='Sending...';
+  try{
+    const resp=await fetch('/api/contact',{
+      method:'POST',
+      headers:{'Accept':'application/json','Content-Type':'application/json'},
+      body:JSON.stringify({
+        name,
+        email,
+        service,
+        concept,
+        neighborhood:neighborhood||null,
+        phone:phone||null,
+        notes:message||null
+      })
+    });
+    if(!resp.ok)throw new Error();
+    document.getElementById('contact-form').style.display='none';
+    document.getElementById('form-success').style.display='block';
+  }catch(e){
+    btn.disabled=false;btn.textContent='Submit Request →';
+    alert('Something went wrong. Please email walley.research@gmail.com directly.');
+  }
+}
+
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.style.opacity='1';e.target.style.transform='translateY(0)';}});
+},{threshold:0.08});
+document.querySelectorAll('.tc,.mod,.ps,.comp-table').forEach(el=>{
+  el.style.opacity='0';el.style.transform='translateY(16px)';
+  el.style.transition='opacity .5s ease,transform .5s ease';
+  obs.observe(el);
+});
+</script>
+</body>
+</html>
