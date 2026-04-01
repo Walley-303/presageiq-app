@@ -227,11 +227,13 @@ app.get('*', (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-initDb().then(() => {
-  app.listen(PORT, () => {
-    console.log(`PresageIQ running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`PresageIQ running on port ${PORT}`);
+  if (!process.env.DATABASE_URL) {
+    console.warn('WARNING: DATABASE_URL not set — database features disabled. Add a PostgreSQL service in Railway.');
+    return;
+  }
+  initDb().catch(err => {
+    console.error('DB init failed (server still running):', err.message);
   });
-}).catch(err => {
-  console.error('DB init failed:', err);
-  process.exit(1);
 });
