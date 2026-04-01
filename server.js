@@ -16,9 +16,7 @@ app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 
 // ── PostgreSQL ────────────────────────────────────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway')
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
 async function initDb() {
@@ -37,6 +35,19 @@ async function initDb() {
     )
   `);
   console.log('Database ready.');
+}
+
+async function initDbWithRetry(attempts = 5, delayMs = 2000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await initDb();
+      return;
+    } catch (err) {
+      console.error(`DB init attempt ${i}/${attempts} failed: ${err.message}`);
+      if (i < attempts) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  console.error('DB init failed after all attempts — database features will not work.');
 }
 
 // ── POST /api/chat ─ Anthropic proxy ─────────────────────────────────────────
@@ -98,7 +109,7 @@ app.post('/api/contact', async (req, res) => {
     res.json({ success: true, id: client.id });
   } catch (err) {
     console.error('Contact save error:', err);
-    res.status(500).json({ error: 'Failed to save request' });
+    res.status(500).json({ error: 'Failed to save request', detail: err.message });
   }
 });
 
@@ -234,10 +245,8 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`PresageIQ running on port ${PORT}`);
   if (!process.env.DATABASE_URL) {
-    console.warn('WARNING: DATABASE_URL not set — database features disabled. Add a PostgreSQL service in Railway.');
+    console.warn('WARNING: DATABASE_URL not set — database features disabled.');
     return;
   }
-  initDb().catch(err => {
-    console.error('DB init failed (server still running):', err.message);
-  });
+  initDbWithRetry();
 });
