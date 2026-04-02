@@ -53,37 +53,45 @@ async function initDbWithRetry(attempts = 5, delayMs = 2000) {
   console.error('DB init failed after all attempts — database features will not work.');
 }
 
-// ── POST /api/chat ─ Anthropic proxy ─────────────────────────────────────────
+// ── POST /api/chat ─ OpenAI proxy ────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Translate Anthropic-style request → OpenAI format
+    const { model, system, messages, max_tokens } = req.body;
+    const openaiMessages = [];
+    if (system) openaiMessages.push({ role: 'system', content: system });
+    if (messages) openaiMessages.push(...messages);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages: openaiMessages,
+        max_tokens: max_tokens || 1000,
+      }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      const code = data?.error?.type === 'authentication_error' ? 'NO_KEY'
-        : data?.error?.type === 'rate_limit_error' ? 'RATE_LIMITED'
-        : 'API_ERROR';
-      return res.status(response.status).json({ ...data, code });
+      return res.status(response.status).json({ error: data.error?.message || 'API error' });
     }
 
-    res.json(data);
+    // Translate OpenAI response → Anthropic format so the frontend stays unchanged
+    const text = data.choices?.[0]?.message?.content || '';
+    res.json({ content: [{ text }] });
   } catch (err) {
-    console.error('Anthropic proxy error:', err);
-    res.status(502).json({ error: 'Upstream error', code: 'NETWORK' });
+    console.error('OpenAI proxy error:', err);
+    res.status(502).json({ error: 'Upstream error' });
   }
 });
 
