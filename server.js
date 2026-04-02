@@ -95,6 +95,24 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// ── GET /api/reddit-search ─ Reddit proxy (avoids browser CORS) ──────────────
+app.get('/api/reddit-search', async (req, res) => {
+  const { q, sub } = req.query;
+  if (!q) return res.status(400).json({ error: 'q param required' });
+  const subreddit = sub || 'kansascity';
+  try {
+    const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance&t=year&limit=10`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'PresageIQ-Internal/1.0', 'Accept': 'application/json' }
+    });
+    if (!r.ok) return res.status(r.status).json({ error: `Reddit returned ${r.status}` });
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── POST /api/contact ─ save client + send emails ────────────────────────────
 app.post('/api/contact', async (req, res) => {
   const { name, email, service, concept, neighborhood, phone, notes, bizname, biztype } = req.body;

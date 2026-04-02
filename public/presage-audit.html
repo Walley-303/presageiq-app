@@ -895,6 +895,29 @@ async function analyzeMenu() {
   btn.disabled = false;
 }
 
+// Shared Reddit fetch via server proxy (avoids browser CORS)
+async function redditSearch(query, sub) {
+  try {
+    const r = await fetch(`/api/reddit-search?q=${encodeURIComponent(query)}&sub=${encodeURIComponent(sub)}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return (d?.data?.children || []).map(c => ({ ...c.data, sub }));
+  } catch(e) { return []; }
+}
+
+function renderRedditPosts(posts, label) {
+  if (posts.length === 0) return `<span style="color:var(--text3);font-size:11px;">${label}</span>`;
+  return `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;letter-spacing:.5px;">${posts.length} Reddit post${posts.length > 1 ? 's' : ''} found</div>` +
+    posts.map(p => {
+      const snippet = p.selftext ? escHtml(p.selftext.substring(0,180)) + '...' : '';
+      return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
+        <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
+        ${snippet ? `<div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-style:italic;">${snippet}</div>` : ''}
+        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${timeAgo(p.created_utc)}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
+      </div>`;
+    }).join('');
+}
+
 async function scanMenuReddit() {
   const btn = document.getElementById('menu-reddit-btn');
   const result = document.getElementById('menu-result');
@@ -902,38 +925,23 @@ async function scanMenuReddit() {
   btn.disabled = true;
   result.classList.add('visible');
   const biz = document.getElementById('s-biz').value.trim();
-  const nbhd = document.getElementById('s-nbhd').value;
-  if(!biz) { body.innerHTML = '<span style="color:var(--warn);">Enter a business name in Client Setup first.</span>'; btn.disabled=false; return; }
+  const nbhd = document.getElementById('s-nbhd').value.trim();
+  if (!biz) { body.innerHTML = '<span style="color:var(--warn);">Enter a business name in Client Setup first.</span>'; btn.disabled=false; return; }
 
-  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for mentions of ${biz}...</span>`;
+  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for mentions of ${escHtml(biz)}...</span>`;
 
-  const subs = ['kansascity','KCFoodScene'];
+  const query = nbhd ? `${biz} ${nbhd}` : biz;
+  const subs = ['kansascity', 'KCFoodScene'];
   let allPosts = [];
-  for(const sub of subs) {
-    try {
-      const r = await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(biz + ' ' + nbhd)}&restrict_sr=1&sort=relevance&t=year&limit=10`,{headers:{'Accept':'application/json'}});
-      if(!r.ok) continue;
-      const d = await r.json();
-      (d?.data?.children||[]).forEach(c => allPosts.push({...c.data,sub}));
-    } catch(e){}
+  for (const sub of subs) {
+    const posts = await redditSearch(query, sub);
+    allPosts.push(...posts);
   }
   const seen = new Set();
-  allPosts = allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
+  allPosts = allPosts.filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; })
+                     .sort((a,b) => b.score - a.score).slice(0, 8);
 
-  if(allPosts.length === 0) {
-    body.innerHTML = `<span style="color:var(--text3);font-size:11px;">No Reddit posts found for "${biz}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.</span>`;
-  } else {
-    body.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;letter-spacing:.5px;">${allPosts.length} Reddit posts found for "${biz}"</div>` +
-      allPosts.map(p=>{
-        const age = timeAgo(p.created_utc);
-        const snippet = p.selftext ? p.selftext.substring(0,180)+'...' : '';
-        return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
-          <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
-          ${snippet?`<div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-style:italic;">${escHtml(snippet)}</div>`:''}
-          <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${age}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
-        </div>`;
-      }).join('');
-  }
+  body.innerHTML = renderRedditPosts(allPosts, `No Reddit posts found for "${escHtml(biz)}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.`);
   btn.disabled = false;
 }
 
@@ -970,10 +978,29 @@ async function scanRedditReviews() {
   const body = document.getElementById('review-result-body');
   btn.disabled = true; result.classList.add('visible');
   const biz = document.getElementById('s-biz').value.trim();
-  if(!biz) { body.innerHTML='<span style="color:var(--warn);">Enter business name in Client Setup first.</span>'; btn.disabled=false; return; }
-  body.innerHTML=`<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>`;
-  await scanMenuReddit();
-  btn.disabled=false;
+  const nbhd = document.getElementById('s-nbhd').value.trim();
+  if (!biz) { body.innerHTML = '<span style="color:var(--warn);">Enter business name in Client Setup first.</span>'; btn.disabled=false; return; }
+
+  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for reviews of ${escHtml(biz)}...</span>`;
+
+  // Search for review-oriented content: business name + review keywords
+  const reviewQuery = `"${biz}" review`;
+  const nameQuery = nbhd ? `${biz} ${nbhd}` : biz;
+  const subs = ['kansascity', 'KCFoodScene'];
+  let allPosts = [];
+  for (const sub of subs) {
+    const [byReview, byName] = await Promise.all([
+      redditSearch(reviewQuery, sub),
+      redditSearch(nameQuery, sub)
+    ]);
+    allPosts.push(...byReview, ...byName);
+  }
+  const seen = new Set();
+  allPosts = allPosts.filter(p => { if(seen.has(p.id)) return false; seen.add(p.id); return true; })
+                     .sort((a,b) => b.score - a.score).slice(0, 10);
+
+  body.innerHTML = renderRedditPosts(allPosts, `No Reddit mentions found for "${escHtml(biz)}". Paste reviews above from Google/Yelp and run Extract Review Signals instead.`);
+  btn.disabled = false;
 }
 
 async function analyzeInventory() {
@@ -1031,26 +1058,16 @@ async function scanCompetitorReddit() {
   const body = document.getElementById('comp-result-body');
   result.classList.add('visible');
   body.innerHTML=`<div style="font-size:11px;color:var(--text3);">Scanning Reddit for competitor mentions...</div>`;
+  const query = nbhd ? `${firstComp} ${nbhd}` : firstComp;
   const subs=['kansascity','KCFoodScene'];
   let allPosts=[];
   for(const sub of subs){
-    try{
-      const r=await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(firstComp+' '+nbhd)}&restrict_sr=1&sort=relevance&t=year&limit=8`,{headers:{'Accept':'application/json'}});
-      if(!r.ok)continue;
-      const d=await r.json();
-      (d?.data?.children||[]).forEach(c=>allPosts.push({...c.data,sub}));
-    }catch(e){}
+    const posts = await redditSearch(query, sub);
+    allPosts.push(...posts);
   }
   const seen=new Set();
   allPosts=allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,6);
-  if(allPosts.length===0){body.innerHTML=`<span style="color:var(--text3);font-size:11px;">No posts found for "${firstComp}".</span>`;}
-  else{
-    body.innerHTML=`<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">Reddit mentions of "${firstComp}"</div>`+
-      allPosts.map(p=>`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:5px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
-        <div style="font-size:11px;color:var(--text);margin-bottom:3px;">${escHtml(p.title)}</div>
-        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span style="margin-left:auto;color:var(--teal);">↗</span></div>
-      </div>`).join('');
-  }
+  body.innerHTML = renderRedditPosts(allPosts, `No Reddit posts found for "${escHtml(firstComp)}".`);
   btn.disabled=false;
 }
 
@@ -1181,37 +1198,20 @@ async function runConceptReddit() {
   if(!nbhd && !type) { if(targetEl) targetEl.innerHTML='<span style="color:var(--warn);">Enter neighborhood and business type in Concept Setup first.</span>'; return; }
 
   const searchTerm = `${nbhd} ${type.split('—')[0].trim()}`.trim();
-  if(targetEl) targetEl.innerHTML = `<div style="font-size:11px;color:var(--text3);">Scanning Reddit for: "${searchTerm}"...</div>`;
+  if(targetEl) targetEl.innerHTML = `<div style="font-size:11px;color:var(--text3);">Scanning Reddit for: "${escHtml(searchTerm)}"...</div>`;
 
   const subs = ['kansascity','KCFoodScene','kansascitylocal'];
   let allPosts = [];
   for(const sub of subs) {
-    try {
-      const r = await fetch(`https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(searchTerm)}&restrict_sr=1&sort=relevance&t=year&limit=8`,{headers:{'Accept':'application/json'}});
-      if(!r.ok) continue;
-      const d = await r.json();
-      (d?.data?.children||[]).forEach(c => allPosts.push({...c.data,sub}));
-    } catch(e){}
+    const posts = await redditSearch(searchTerm, sub);
+    allPosts.push(...posts);
   }
   const seen = new Set();
   allPosts = allPosts.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
 
   if(!targetEl) return;
-  if(allPosts.length === 0) {
-    targetEl.innerHTML = `<span style="color:var(--text3);font-size:11px;">No Reddit posts found for "${searchTerm}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.</span>`;
-    return;
-  }
-  targetEl.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;">${allPosts.length} community posts found for "${searchTerm}"</div>` +
-    allPosts.map(p=>{
-      const age = timeAgo(p.created_utc);
-      const snippet = p.selftext ? p.selftext.substring(0,160)+'...' : '';
-      return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
-        <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
-        ${snippet?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-bottom:4px;">${escHtml(snippet)}</div>`:''}
-        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${age}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
-      </div>`;
-    }).join('');
-  markConsultDone('c-community');
+  targetEl.innerHTML = renderRedditPosts(allPosts, `No Reddit posts found for "${escHtml(searchTerm)}". Try searching manually on <a href="https://reddit.com/r/KCFoodScene" target="_blank" style="color:var(--teal);">r/KCFoodScene</a>.`);
+  if(allPosts.length > 0) markConsultDone('c-community');
 }
 
 // =============================================
@@ -1414,7 +1414,7 @@ function renderQueueList() {
           ${cl.concept ? `<div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5;border-left:2px solid var(--border2);padding-left:8px;">${escHtml(cl.concept.substring(0, 180))}${cl.concept.length > 180 ? '...' : ''}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-          <button onclick="loadClientIntoSession(${cl.id})" style="background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.3);color:var(--gold);padding:6px 12px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;white-space:nowrap;">Load Client &#8594;</button>
+          <button onclick="showLoadModal(${cl.id})" style="background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.3);color:var(--gold);padding:6px 12px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;white-space:nowrap;">Load Client &#8594;</button>
           <select onchange="updateClientStatus(${cl.id}, this.value)" style="background:var(--bg4);border:1px solid var(--border2);color:var(--text2);padding:5px 8px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;">
             <option value="pending" ${cl.status==='pending'?'selected':''}>Pending</option>
             <option value="active" ${cl.status==='active'?'selected':''}>Active</option>
@@ -1461,7 +1461,7 @@ async function updateClientStatus(id, status) {
   }
 }
 
-function loadClientIntoSession(id) {
+function loadClientIntoSession(id, mode) {
   const cl = allClients.find(c => c.id === id);
   if (!cl) return;
 
@@ -1487,8 +1487,9 @@ function loadClientIntoSession(id) {
     }
   }
 
-  // Switch to appropriate mode and show setup panel
-  if (cl.service === 'consult') {
+  // Use explicitly chosen mode; fall back to service type
+  const targetMode = mode || (cl.service === 'consult' ? 'consult' : 'audit');
+  if (targetMode === 'consult') {
     setMode('consult');
     // Populate consult fields
     const consultMap = {
@@ -1588,9 +1589,46 @@ async function aiIdentifyCompetitors() {
 }
 
 // =============================================
+// LOAD MODE MODAL
+// =============================================
+let pendingLoadId = null;
+
+function showLoadModal(id) {
+  pendingLoadId = id;
+  const cl = allClients.find(c => c.id === id);
+  const label = cl ? escHtml(cl.name) + (cl.bizname ? ' · ' + escHtml(cl.bizname) : '') : 'Client';
+  document.getElementById('load-modal-name').innerHTML = label;
+  document.getElementById('load-modal').style.display = 'flex';
+}
+function closeLoadModal() {
+  document.getElementById('load-modal').style.display = 'none';
+  pendingLoadId = null;
+}
+function confirmLoad(mode) {
+  const id = pendingLoadId;
+  closeLoadModal();
+  if (id) loadClientIntoSession(id, mode);
+}
+
+// =============================================
 // Init
 renderMenuItems();
 renderVendors();
 </script>
+
+<!-- LOAD MODE MODAL -->
+<div id="load-modal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.72);align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:32px 36px;max-width:340px;width:90%;text-align:center;">
+    <div style="font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">Load Client</div>
+    <div id="load-modal-name" style="font-size:14px;color:var(--text);font-weight:500;margin-bottom:6px;"></div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:24px;">Select session type:</div>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <button onclick="confirmLoad('audit')" style="background:rgba(255,255,255,0.05);border:1px solid var(--border2);color:var(--text2);padding:11px 22px;border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:.5px;">◎ Audit</button>
+      <button onclick="confirmLoad('consult')" style="background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.35);color:var(--gold);padding:11px 22px;border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:.5px;">◎ Consult</button>
+    </div>
+    <button onclick="closeLoadModal()" style="margin-top:18px;background:none;border:none;color:var(--text3);font-size:10px;cursor:pointer;font-family:var(--font-mono);letter-spacing:.5px;">Cancel</button>
+  </div>
+</div>
+
 </body>
 </html>
