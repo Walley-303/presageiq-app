@@ -724,8 +724,12 @@ async function callAI(payload) {
   const resp = await fetch(PROXY_URL, {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
   });
-  if(!resp.ok) throw new Error('AI call failed');
-  return resp.json();
+  const data = await resp.json();
+  if(!resp.ok) {
+    const msg = data?.error?.message || data?.error || `HTTP ${resp.status}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 // =============================================
@@ -880,14 +884,14 @@ async function analyzeMenu() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:900,
+      model:'claude-3-5-sonnet-20241022', max_tokens:900,
       system:`You are PresageIQ conducting a Presage Audit for an existing KC business. Be direct, specific, and actionable. No generic advice. Reference the actual items provided.`,
       messages:[{role:'user', content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ITEMS:\n${itemSummary}\n\nOWNER'S VIEW OF HIGHLIGHTS: ${document.getElementById('m-highlights').value||'Not provided'}\nKNOWN WEAK SPOTS: ${document.getElementById('m-weak').value||'Not provided'}\nPASTED REVIEWS: ${document.getElementById('m-reviews').value||'None provided'}\n\nAnalyze this menu. Structure:\n**STAR ITEMS** — what's working and should be featured more prominently\n**UNDERPERFORMERS** — items to fix, relaunch, or cut (be specific: which ones and why)\n**MISSING FROM MENU** — gaps based on reviews and neighborhood context\n**MARKETING PRIORITY** — the single highest-leverage change (what to push in ads/signage)\n**LAUNCH OPPORTUNITY** — one new item concept that fits this menu and fills a documented gap`}]
     });
     const text = data.content?.[0]?.text || '';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markDone('menu');
-  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Analysis failed — check connection and try again.</span>'; }
+  } catch(e) { body.innerHTML = `<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled = false;
 }
 
@@ -949,14 +953,14 @@ async function analyzeReviews() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:900,
+      model:'claude-3-5-sonnet-20241022', max_tokens:900,
       system:`You are PresageIQ extracting market intelligence from customer reviews for a KC business audit. Be specific — quote or closely paraphrase actual review content. Identify patterns, not just individual comments.`,
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nREVIEW SOURCES:\n${allReviews}\n\nExtract intelligence. Structure:\n**WHAT CUSTOMERS LOVE** — specific items, experiences, or qualities mentioned positively (with frequency)\n**COMMON COMPLAINTS** — recurring issues (service, quality, price, parking, etc.)\n**UNMET REQUESTS** — what customers ask for that doesn't exist yet\n**ITEM-LEVEL SIGNALS** — any specific menu items praised or criticized\n**SENTIMENT SUMMARY** — overall brand health signal (1-2 sentences)\n**PRIORITY ACTION** — the single most impactful thing to fix or capitalize on based on these reviews`}]
     });
     const text = data.content?.[0]?.text || '';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markDone('reviews');
-  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled = false;
 }
 
@@ -985,14 +989,14 @@ async function analyzeInventory() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:800,
+      model:'claude-3-5-sonnet-20241022', max_tokens:800,
       system:`You are PresageIQ conducting a supply chain analysis for a KC business. Focus on consolidation opportunities, local sourcing in the KC/Missouri/Kansas region, and cost efficiency. Be specific and actionable.`,
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCURRENT VENDORS:\n${vendorSummary}\n\nSOURCING PROBLEMS: ${document.getElementById('inv-problems').value||'None noted'}\nSOURCING WISHLIST: ${document.getElementById('inv-wish').value||'None noted'}\n\nAnalyze this supply chain. Structure:\n**CONSOLIDATION OPPORTUNITIES** — vendors that can be merged or eliminated\n**PRICING FLAGS** — areas where they're likely overpaying\n**LOCAL SOURCING GAPS** — KC/regional alternatives worth exploring (be specific about KC-area options where you know them)\n**QUICK WINS** — 2-3 changes that reduce cost or improve quality with low friction\n**STRATEGIC SHIFT** — one bigger supply chain move that could meaningfully improve operations`}]
     });
     const text = data.content?.[0]?.text||'';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markDone('inventory');
-  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled=false;
 }
 
@@ -1005,14 +1009,14 @@ async function analyzeCompetitors() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:900,
+      model:'claude-3-5-sonnet-20241022', max_tokens:900,
       system:`You are PresageIQ conducting a competitor gap analysis for a KC business audit. Be direct. The goal is to identify specific opportunities the client can act on — not general competitive awareness.`,
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCOMPETITORS:\n${document.getElementById('comp-list').value||'Not provided'}\n\nWHAT COMPETITORS WIN ON: ${document.getElementById('comp-wins').value||'Not provided'}\nCOMPETITOR WEAKNESSES: ${document.getElementById('comp-gaps').value||'Not provided'}\n\nAnalyze the competitive landscape. Structure:\n**WHAT THEY'RE LOSING TO COMPETITORS** — specific areas where competitors outperform them\n**GAPS COMPETITORS LEAVE OPEN** — what nobody in this market is doing well that this business could own\n**STEAL THIS** — one specific item, experience, or strategy a competitor is winning on that this business should adapt and make their version of\n**POSITIONING RECOMMENDATION** — how this business should position against the competitive set\n**HIGHEST LEVERAGE MOVE** — the single competitive action with the most upside`}]
     });
     const text = data.content?.[0]?.text||'';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markDone('competitors');
-  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled=false;
 }
 
@@ -1066,7 +1070,7 @@ async function generateBrief() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:1500,
+      model:'claude-3-5-sonnet-20241022', max_tokens:1500,
       system:`You are PresageIQ writing a Presage Brief Extended — a professional business intelligence report delivered to a client after a full audit engagement. Write in a clear, authoritative, professional tone. This document will be sent directly to the client. Format it as a structured report. Use ** for bold headers.`,
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ANALYSIS FINDINGS:\n${menuResult||'Not completed'}\n\nREVIEW SIGNAL FINDINGS:\n${reviewResult||'Not completed'}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR ANALYSIS FINDINGS:\n${compResult||'Not completed'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz').value||'Client Business'} · ${document.getElementById('s-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the overall state of this business and the single most important thing they need to do)\n\n**WHAT'S WORKING** (strengths to protect and amplify)\n\n**WHAT NEEDS TO CHANGE** (honest list of problems, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (specific item actions)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement — acknowledge the challenge, affirm the opportunity)\n\nBe specific. Reference actual data from the findings. This is a $2,500 deliverable — write accordingly.`}]
     });
@@ -1075,7 +1079,7 @@ async function generateBrief() {
       text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);font-size:13px;">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>')
     }</div>`;
     markDone('brief');
-  } catch(e) { output.innerHTML='<span style="color:var(--danger);">Brief generation failed — make sure all modules have been analyzed first.</span>'; }
+  } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
   btn.disabled=false;
 }
 
@@ -1152,14 +1156,14 @@ async function runMarketAnalysis() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:900,
+      model:'claude-3-5-sonnet-20241022', max_tokens:900,
       system:`You are PresageIQ conducting a pre-launch market viability analysis for a Kansas City business concept. Be direct and honest — a weak market signal is valuable information. Reference neighborhood-specific data where possible. Use ** for bold headers.`,
       messages:[{role:'user', content:`${getConsultContext()}\n\nAnalyze market viability for this concept. Structure:\n\n**FIT SCORE: X/10** — one sentence verdict\n\n**WHAT THE MARKET SAYS IS WORKING FOR THIS** — demand signals, demographic alignment, neighborhood opportunity\n\n**WHAT WORKS AGAINST IT** — saturation, demographic mismatch, timing, or structural concerns\n\n**NEIGHBORHOOD VERDICT** — is ${nbhd} the right location? If not, name a better KC neighborhood and why\n\n**THE ONE THING THAT DETERMINES SUCCESS HERE** — the single factor that makes or breaks this concept in this market\n\nBe specific to Kansas City. Reference real neighborhood characteristics.`}]
     });
     const text = data.content?.[0]?.text || '';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markConsultDone('c-market');
-  } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML = `<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled = false;
 }
 
@@ -1228,14 +1232,14 @@ async function runCommunityAnalysis() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:700,
+      model:'claude-3-5-sonnet-20241022', max_tokens:700,
       system:`You are PresageIQ extracting community intelligence relevant to a pre-launch business concept in Kansas City. Focus on signals that validate or challenge the concept.`,
       messages:[{role:'user',content:`${getConsultContext()}\n\nCOMMUNITY CONTENT:\n${pasted}\n\nExtract intelligence relevant to this concept. Structure:\n**DEMAND SIGNALS** — evidence locals want something like this\n**CAUTION SIGNALS** — evidence of market resistance, oversaturation, or failed precedents\n**DIRECT QUOTES OF NOTE** — 2-3 specific quotes that capture community sentiment most clearly\n**COMMUNITY VERDICT** — one sentence on what the community data says about this concept's viability`}]
     });
     const text = data.content?.[0]?.text||'';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markConsultDone('c-community');
-  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled = false;
 }
 
@@ -1257,7 +1261,7 @@ Revenue assumptions: ${document.getElementById('cf-revenue').value||'None provid
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:1000,
+      model:'claude-3-5-sonnet-20241022', max_tokens:1000,
       system:`You are PresageIQ generating a financial projection for a pre-launch KC business concept. Be realistic — not pessimistic, not optimistic. Use industry benchmarks for the business type and KC market conditions. Clearly state all assumptions. This is a planning tool, not a guarantee. Use ** for bold headers.
 
 IMPORTANT: At the end of your response, output exactly this format on separate lines:
@@ -1302,14 +1306,14 @@ async function runFundingAnalysis() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:800,
+      model:'claude-3-5-sonnet-20241022', max_tokens:800,
       system:`You are PresageIQ identifying funding pathways for a pre-launch KC business. Focus on realistic, accessible options based on the client's profile. Prioritize by likelihood of success. Include veteran-specific resources if applicable. Be specific — name actual programs, not just categories.`,
       messages:[{role:'user',content:`${getConsultContext()}\n\nIdentify the most relevant funding pathways for this client. Structure:\n\n**BEST FIT — PURSUE FIRST** — the 2-3 most realistic funding sources given their profile, investment range, and business type. Name specific programs.\n\n**VETERAN-SPECIFIC RESOURCES** — if applicable, specific VA, SBA veteran, or Missouri veteran programs they should explore immediately.\n\n**KC-SPECIFIC OPPORTUNITIES** — local KC grants, CDFI loans, neighborhood development funds, or programs specific to their target area.\n\n**REALISTIC FUNDING STACK** — how they might combine multiple sources to reach their startup cost target.\n\n**FIRST THREE CALLS TO MAKE** — the specific organizations to contact this week, in priority order.`}]
     });
     const text = data.content?.[0]?.text||'';
     body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     markConsultDone('c-funding');
-  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Analysis failed — try again.</span>'; }
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
   btn.disabled = false;
 }
 
@@ -1332,7 +1336,7 @@ async function generateConsultReport() {
 
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:1600,
+      model:'claude-3-5-sonnet-20241022', max_tokens:1600,
       system:`You are PresageIQ writing a Presage Consult Report — a professional pre-launch intelligence report delivered to a client after a full concept analysis session. Write in a clear, authoritative, professional tone. This document will be shared with the client and potentially with investors or lenders. Use ** for bold headers.`,
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getConsultContext()}\n\nMARKET VIABILITY FINDINGS:\n${mktFindings||'Not completed'}\n\nCOMMUNITY INTELLIGENCE:\n${commFindings||'Not completed'}\n\nFINANCIAL PROJECTION:\n${finFindings||'Not completed'}\nStartup Range: ${startupRange} | Monthly Revenue Est: ${revenueEst} | Break-Even: ${breakeven}\n\nFUNDING PATHWAYS:\n${fundFindings||'Not completed'}\n\nWrite the Presage Consult Report. Structure:\n\n**PRESAGE CONSULT REPORT**\n**${document.getElementById('cc-concept').value.substring(0,60)||'Business Concept'} · ${document.getElementById('cc-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (3 sentences — viability verdict, biggest opportunity, most critical risk)\n\n**MARKET VIABILITY** (what the data says about this concept in this market)\n\n**WHAT THE COMMUNITY IS TELLING US** (key signals from locals)\n\n**FINANCIAL SNAPSHOT**\n— Startup Cost Range: ${startupRange}\n— Monthly Revenue Estimate: ${revenueEst}\n— Break-Even Timeline: ${breakeven}\n(1 paragraph interpreting what these numbers mean for this client)\n\n**FUNDING PATHWAYS** (top 3 most relevant for this client)\n\n**PRIORITY ACTION PLAN**\n— This Week\n— Next 30 Days\n— 60-90 Days\n\n**CLOSING ASSESSMENT** (honest, direct, encouraging — acknowledge the risk, affirm the opportunity if it's real, be straight if it's not)\n\nThis is a $500 deliverable. Write accordingly.`}]
     });
@@ -1544,7 +1548,7 @@ async function generateReviewResearchBrief() {
   const prompt = `Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nGenerate a Research Brief:\n\n**SEARCH STRINGS TO USE**\nExact queries for Google, Yelp, and Reddit.\n\n**WHAT TO LOOK FOR — GOOGLE REVIEWS**\nSpecific themes and complaint patterns for this business type in KC.\n\n**WHAT TO LOOK FOR — YELP**\nYelp-specific patterns and filters.\n\n**REDDIT KEYWORDS**\nExact phrases for r/kansascity and r/KCFoodScene.\n\n**COMPETITOR SIGNALS**\nHow to identify 3-5 direct competitors from review data and gaps to watch.`;
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:700,
+      model:'claude-3-5-sonnet-20241022', max_tokens:700,
       system:'You are PresageIQ preparing a pre-session research brief for a business analyst. Generate specific, actionable search instructions and keyword lists the analyst can use right now. Be precise — name exact search strings and what signals to flag.',
       messages:[{role:'user', content: prompt}]
     });
@@ -1570,7 +1574,7 @@ async function aiIdentifyCompetitors() {
   const prompt = `Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nIdentify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots.\nThen give a one-line COMPETITIVE LANDSCAPE SUMMARY.\n\nFinally output exactly:\nPLAIN LIST:\n[name — type, one per line]`;
   try {
     const data = await callAI({
-      model:'claude-sonnet-4-6', max_tokens:700,
+      model:'claude-3-5-sonnet-20241022', max_tokens:700,
       system:'You are PresageIQ identifying the competitive landscape for a KC business. Use knowledge of Kansas City neighborhoods and business categories. Name real businesses where possible. End your response with a section starting with exactly "PLAIN LIST:" followed by competitor names one per line.',
       messages:[{role:'user', content: prompt}]
     });
