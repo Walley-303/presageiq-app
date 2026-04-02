@@ -234,6 +234,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="mnav-item" onclick="showPanel('client-queue'); loadClientQueue();" id="nav-client-queue">
         <span class="mnav-icon">&#9643;</span><span class="mnav-label">Client Queue</span><span class="mnav-check">&#10003;</span>
       </div>
+      <div class="mnav-item" onclick="showPanel('data-library'); loadDataLibrary();" id="nav-data-library">
+        <span class="mnav-icon">◈</span><span class="mnav-label">Data Library</span><span class="mnav-check">&#10003;</span>
+      </div>
     </div>
     <div class="sidebar-footer">
       <div class="progress-label">Session Progress</div>
@@ -602,8 +605,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="run-btn" id="comm-run-btn" onclick="runCommunityAnalysis()">◎ Analyze Community Signals</button>
-          <button class="run-btn teal" id="comm-reddit-btn" onclick="runConceptReddit()">◎ Pull Live Reddit Signals</button>
+          <button class="run-btn purple" id="comm-db-btn" onclick="runStoredCommunityAnalysis()">◎ Query Intel Database</button>
+          <button class="run-btn" id="comm-run-btn" onclick="runCommunityAnalysis()">◎ Analyze Pasted Content</button>
+          <button class="run-btn teal" id="comm-reddit-btn" onclick="runConceptReddit()">◎ Pull Live Reddit</button>
         </div>
         <div class="ai-result" id="comm-result">
           <div class="ai-result-header"><span class="ai-result-label">◎ Community Intelligence — PresageIQ</span></div>
@@ -705,6 +709,160 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
     </div>
 
+    <!-- DATA LIBRARY -->
+    <div class="panel" id="panel-data-library">
+      <div class="panel-head">
+        <div class="panel-title">Intelligence Data Library</div>
+        <div class="panel-desc">Automated collection from Reddit, news, KC Open Data, and Census. This is the knowledge base that powers AI-generated community intelligence.</div>
+      </div>
+      <div class="panel-body">
+
+        <!-- Stats Cards -->
+        <div id="dl-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;">
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px 16px;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Reddit Posts</div>
+            <div id="dl-stat-reddit" style="font-size:22px;color:#ff4500;font-weight:600;">—</div>
+            <div id="dl-stat-reddit-date" style="font-size:9px;color:var(--text3);margin-top:2px;">never collected</div>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px 16px;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">News Articles</div>
+            <div id="dl-stat-gdelt" style="font-size:22px;color:var(--teal);font-weight:600;">—</div>
+            <div id="dl-stat-gdelt-date" style="font-size:9px;color:var(--text3);margin-top:2px;">never collected</div>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px 16px;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">KC Businesses</div>
+            <div id="dl-stat-businesses" style="font-size:22px;color:var(--gold);font-weight:600;">—</div>
+            <div id="dl-stat-kc-date" style="font-size:9px;color:var(--text3);margin-top:2px;">never collected</div>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px 16px;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Manual Entries</div>
+            <div id="dl-stat-manual" style="font-size:22px;color:var(--text2);font-weight:600;">—</div>
+            <div style="font-size:9px;color:var(--text3);margin-top:2px;">paste &amp; tag below</div>
+          </div>
+        </div>
+
+        <!-- Collection Controls -->
+        <div class="field-group">
+          <div class="field-group-title">Run Collection</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="run-btn" onclick="runCollection('reddit')" id="dl-btn-reddit" style="font-size:10px;padding:7px 14px;border-color:#ff4500;color:#ff4500;">Reddit</button>
+            <button class="run-btn" onclick="runCollection('gdelt')" id="dl-btn-gdelt" style="font-size:10px;padding:7px 14px;border-color:var(--teal);color:var(--teal);">GDELT News</button>
+            <button class="run-btn" onclick="runCollection('kc_open_data')" id="dl-btn-kc" style="font-size:10px;padding:7px 14px;">KC Open Data</button>
+            <button class="run-btn" onclick="runCollection('census')" id="dl-btn-census" style="font-size:10px;padding:7px 14px;">Census ACS</button>
+            <button class="run-btn" onclick="runCollection('foursquare')" id="dl-btn-fsq" style="font-size:10px;padding:7px 14px;">Foursquare</button>
+            <button class="run-btn purple" onclick="runCollection('all')" id="dl-btn-all" style="font-size:10px;padding:7px 14px;">◎ Run All</button>
+          </div>
+          <div id="dl-run-status" style="font-size:10px;color:var(--text3);padding:4px 0;min-height:16px;"></div>
+        </div>
+
+        <!-- Collection Log -->
+        <div class="field-group">
+          <div class="field-group-title">Recent Collection Runs</div>
+          <div id="dl-log" style="font-size:10px;color:var(--text3);">Loading...</div>
+        </div>
+
+        <!-- Browse Community Intel -->
+        <div class="field-group">
+          <div class="field-group-title">Browse Community Intelligence</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
+            <div class="field" style="flex:1;min-width:130px;">
+              <label>Neighborhood</label>
+              <select class="fi" id="dl-filter-nbhd" style="width:100%;">
+                <option value="">All Neighborhoods</option>
+                <option>Waldo</option><option>Brookside</option><option>Westport</option>
+                <option>Country Club Plaza</option><option>Crossroads</option><option>River Market</option>
+                <option>Midtown</option><option>18th and Vine</option><option>Hyde Park</option>
+                <option>Westside</option><option>Martin City</option><option>Downtown KC</option>
+                <option>North KC</option><option>Zona Rosa</option><option>Lee's Summit</option>
+                <option>Overland Park</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:120px;">
+              <label>Business Type</label>
+              <select class="fi" id="dl-filter-type" style="width:100%;">
+                <option value="">All Types</option>
+                <option>restaurant</option><option>bar</option><option>brewery</option>
+                <option>cafe</option><option>food_truck</option><option>retail</option>
+                <option>pizza</option><option>bbq</option><option>brunch</option><option>mexican</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:100px;">
+              <label>Source</label>
+              <select class="fi" id="dl-filter-source" style="width:100%;">
+                <option value="">All Sources</option>
+                <option value="reddit">Reddit</option>
+                <option value="gdelt">GDELT News</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:100px;">
+              <label>Sentiment</label>
+              <select class="fi" id="dl-filter-sentiment" style="width:100%;">
+                <option value="">Any</option>
+                <option value="positive">Positive</option>
+                <option value="negative">Negative</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </div>
+            <button class="run-btn" onclick="browseIntel()" style="font-size:10px;padding:7px 14px;flex-shrink:0;">Search</button>
+          </div>
+          <div id="dl-browse-results" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+            <div style="font-size:11px;color:var(--text3);">Set filters and click Search to browse stored intelligence.</div>
+          </div>
+          <div id="dl-browse-pagination" style="font-size:10px;color:var(--text3);margin-top:8px;"></div>
+        </div>
+
+        <!-- Manual Entry -->
+        <div class="field-group">
+          <div class="field-group-title">Manual Entry — Paste &amp; Tag</div>
+          <div class="field-row one">
+            <div class="field"><label>Title (optional)</label>
+              <input class="fi" type="text" id="dl-manual-title" placeholder="Source title or headline..."/>
+            </div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Content <span>— paste review, post, article, or any community text</span></label>
+              <textarea class="fta" id="dl-manual-body" placeholder="Paste content here..." style="min-height:100px;"></textarea>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Neighborhoods</label>
+              <select class="fi" id="dl-manual-nbhd" multiple style="height:80px;">
+                <option>Waldo</option><option>Brookside</option><option>Westport</option>
+                <option>Country Club Plaza</option><option>Crossroads</option><option>River Market</option>
+                <option>Midtown</option><option>18th and Vine</option><option>Hyde Park</option>
+                <option>Westside</option><option>Martin City</option><option>Downtown KC</option>
+                <option>North KC</option><option>Zona Rosa</option><option>Lee's Summit</option>
+                <option>Overland Park</option>
+              </select>
+            </div>
+            <div class="field"><label>Business Types</label>
+              <select class="fi" id="dl-manual-types" multiple style="height:80px;">
+                <option>restaurant</option><option>bar</option><option>brewery</option>
+                <option>cafe</option><option>food_truck</option><option>retail</option>
+                <option>pizza</option><option>bbq</option><option>brunch</option><option>mexican</option>
+              </select>
+            </div>
+            <div class="field"><label>Sentiment</label>
+              <select class="fi" id="dl-manual-sentiment">
+                <option value="neutral">Neutral</option>
+                <option value="positive">Positive</option>
+                <option value="negative">Negative</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Source URL (optional)</label>
+              <input class="fi" type="text" id="dl-manual-url" placeholder="https://..."/>
+            </div>
+          </div>
+          <button class="run-btn" onclick="submitManualEntry()" id="dl-manual-btn">+ Save to Library</button>
+          <div id="dl-manual-status" style="font-size:10px;color:var(--text3);margin-top:6px;min-height:14px;"></div>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -736,6 +894,8 @@ async function callAI(payload) {
 // NAVIGATION
 // =============================================
 function showPanel(id) {
+  // Stop data library polling when navigating away
+  if (id !== 'data-library') { clearInterval(dlStatusInterval); dlStatusInterval = null; }
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.mnav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
@@ -1585,6 +1745,244 @@ async function aiIdentifyCompetitors() {
     const display = text.replace(/PLAIN LIST:[\s\S]*$/i,'').trim();
     body.innerHTML = display.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   } catch(e) { body.innerHTML = '<span style="color:var(--danger);">Competitor scan failed — try again.</span>'; }
+  btn.disabled = false;
+}
+
+// =============================================
+// DATA LIBRARY
+// =============================================
+let dlStatusInterval = null;
+let dlBrowseOffset = 0;
+
+async function loadDataLibrary() {
+  await refreshDlStats();
+  await refreshDlLog();
+  // Poll collection status every 8s while panel is open
+  clearInterval(dlStatusInterval);
+  dlStatusInterval = setInterval(async () => {
+    await refreshDlStats();
+    await refreshDlLog();
+  }, 8000);
+}
+
+async function refreshDlStats() {
+  try {
+    const [stats, status] = await Promise.all([
+      fetch('/api/intel/stats').then(r => r.json()),
+      fetch('/api/intel/status').then(r => r.json()),
+    ]);
+    const ci = stats.community_intel || {};
+    const bp = stats.business_profiles || {};
+    const reddit = ci.by_source?.reddit;
+    const gdelt  = ci.by_source?.gdelt;
+    const manual = ci.by_source?.manual;
+
+    const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'never';
+
+    setText('dl-stat-reddit', (reddit?.total || 0).toLocaleString());
+    setText('dl-stat-reddit-date', fmtDate(reddit?.last_collected));
+    setText('dl-stat-gdelt', (gdelt?.total || 0).toLocaleString());
+    setText('dl-stat-gdelt-date', fmtDate(gdelt?.last_collected));
+    setText('dl-stat-businesses', (bp.total || 0).toLocaleString());
+    setText('dl-stat-kc-date', status.by_source?.kc_open_data?.completed_at ? fmtDate(status.by_source.kc_open_data.completed_at) : 'never');
+    setText('dl-stat-manual', (manual?.total || 0).toLocaleString());
+  } catch(e) {}
+}
+
+async function refreshDlLog() {
+  try {
+    const data = await fetch('/api/intel/status').then(r => r.json());
+    const runs = (data.recent_runs || []).slice(0, 8);
+    const logEl = document.getElementById('dl-log');
+    if (!logEl) return;
+    if (!runs.length) { logEl.innerHTML = '<span style="color:var(--text3);">No collection runs yet — click a Run button above to start.</span>'; return; }
+
+    const statusColor = { success: 'var(--teal)', error: 'var(--danger)', running: 'var(--warn)' };
+    logEl.innerHTML = `<div style="display:grid;grid-template-columns:80px 80px 80px 1fr;gap:6px;margin-bottom:4px;font-size:9px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;padding:0 4px;">
+      <span>Source</span><span>Status</span><span>Records</span><span>Time</span>
+    </div>` + runs.map(r => `
+      <div style="display:grid;grid-template-columns:80px 80px 80px 1fr;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:7px 10px;font-size:10px;">
+        <span style="color:var(--text2);">${r.source}</span>
+        <span style="color:${statusColor[r.status]||'var(--text3)'};">${r.status}</span>
+        <span style="color:var(--text3);">${r.records_upserted || 0} new</span>
+        <span style="color:var(--text3);">${r.started_at ? new Date(r.started_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}${r.triggered_by === 'manual' ? ' · manual' : ''}</span>
+        ${r.error_message ? `<div style="grid-column:1/-1;color:var(--danger);font-size:9px;margin-top:2px;">${escHtml(r.error_message.substring(0,120))}</div>` : ''}
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function runCollection(source) {
+  const btnId = { reddit:'dl-btn-reddit', gdelt:'dl-btn-gdelt', kc_open_data:'dl-btn-kc', census:'dl-btn-census', foursquare:'dl-btn-fsq', all:'dl-btn-all' }[source];
+  const btn = document.getElementById(btnId);
+  const statusEl = document.getElementById('dl-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = `Starting ${source} collection...`;
+
+  try {
+    const r = await fetch(`/api/intel/collect/${source}`, { method: 'POST' });
+    const data = await r.json();
+    if (statusEl) statusEl.textContent = data.message || 'Collection started — check log below for progress.';
+  } catch(e) {
+    if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+  }
+  if (btn) setTimeout(() => { btn.disabled = false; }, 3000);
+  setTimeout(refreshDlLog, 2000);
+  setTimeout(refreshDlStats, 10000);
+}
+
+async function browseIntel() {
+  dlBrowseOffset = 0;
+  await loadIntelPage();
+}
+
+async function loadIntelPage() {
+  const nbhd     = document.getElementById('dl-filter-nbhd')?.value || '';
+  const type     = document.getElementById('dl-filter-type')?.value || '';
+  const source   = document.getElementById('dl-filter-source')?.value || '';
+  const sentiment= document.getElementById('dl-filter-sentiment')?.value || '';
+  const resultsEl = document.getElementById('dl-browse-results');
+  const paginEl  = document.getElementById('dl-browse-pagination');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div style="font-size:11px;color:var(--text3);">Searching...</div>';
+
+  const params = new URLSearchParams({ limit: 20, offset: dlBrowseOffset });
+  if (nbhd) params.set('neighborhood', nbhd);
+  if (type) params.set('business_type', type);
+  if (source) params.set('source', source);
+  if (sentiment) params.set('sentiment', sentiment);
+
+  try {
+    const data = await fetch(`/api/intel/community?${params}`).then(r => r.json());
+    if (!data.records?.length) {
+      resultsEl.innerHTML = '<div style="font-size:11px;color:var(--text3);">No records match these filters. Try running a collection first.</div>';
+      if (paginEl) paginEl.textContent = '';
+      return;
+    }
+    const sourceColor = { reddit:'#ff4500', gdelt:'var(--teal)', manual:'var(--purple)', kc_open_data:'var(--gold)' };
+    const sentColor   = { positive:'var(--teal)', negative:'var(--danger)', neutral:'var(--text3)', mixed:'var(--warn)' };
+
+    resultsEl.innerHTML = data.records.map(r => `
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px 12px;">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:5px;">
+          <span style="font-size:9px;padding:2px 6px;border-radius:2px;border:1px solid ${sourceColor[r.source]||'var(--border2)'};color:${sourceColor[r.source]||'var(--text3)'};flex-shrink:0;">${r.source}</span>
+          <span style="font-size:11px;color:var(--text);line-height:1.4;flex:1;">${escHtml(r.title||'(no title)')}</span>
+          ${r.url ? `<a href="${escHtml(r.url)}" target="_blank" style="color:var(--teal);font-size:9px;flex-shrink:0;">↗</a>` : ''}
+        </div>
+        ${r.body ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px;line-height:1.5;">${escHtml(r.body.substring(0,200))}${r.body.length>200?'...':''}</div>` : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          ${(r.neighborhoods||[]).map(n=>`<span style="font-size:9px;background:rgba(200,150,62,.08);color:var(--gold);padding:1px 6px;border-radius:2px;">${n}</span>`).join('')}
+          ${(r.business_types||[]).map(t=>`<span style="font-size:9px;background:rgba(255,255,255,.04);color:var(--text3);padding:1px 6px;border-radius:2px;">${t}</span>`).join('')}
+          ${r.sentiment ? `<span style="font-size:9px;color:${sentColor[r.sentiment]||'var(--text3)'};">${r.sentiment}</span>` : ''}
+          ${r.score ? `<span style="font-size:9px;color:var(--text3);">↑${r.score}</span>` : ''}
+          <span style="font-size:9px;color:var(--text3);margin-left:auto;">${r.post_date ? new Date(r.post_date).toLocaleDateString() : ''}</span>
+        </div>
+      </div>
+    `).join('');
+
+    if (paginEl) {
+      const total = data.total;
+      const showing = `Showing ${dlBrowseOffset + 1}–${Math.min(dlBrowseOffset + 20, total)} of ${total.toLocaleString()}`;
+      paginEl.innerHTML = `<span>${showing}</span>` +
+        (dlBrowseOffset > 0 ? `<button onclick="dlBrowseOffset-=20;loadIntelPage();" style="margin-left:10px;background:none;border:1px solid var(--border2);color:var(--text2);padding:3px 8px;border-radius:2px;font-family:var(--font-mono);font-size:9px;cursor:pointer;">← Prev</button>` : '') +
+        (dlBrowseOffset + 20 < total ? `<button onclick="dlBrowseOffset+=20;loadIntelPage();" style="margin-left:6px;background:none;border:1px solid var(--border2);color:var(--text2);padding:3px 8px;border-radius:2px;font-family:var(--font-mono);font-size:9px;cursor:pointer;">Next →</button>` : '');
+    }
+  } catch(e) {
+    resultsEl.innerHTML = `<div style="font-size:11px;color:var(--danger);">Error: ${e.message}</div>`;
+  }
+}
+
+async function submitManualEntry() {
+  const body = document.getElementById('dl-manual-body')?.value.trim();
+  const statusEl = document.getElementById('dl-manual-status');
+  if (!body) { if (statusEl) statusEl.textContent = 'Body is required.'; return; }
+
+  const btn = document.getElementById('dl-manual-btn');
+  if (btn) btn.disabled = true;
+
+  const nbhdSelect = document.getElementById('dl-manual-nbhd');
+  const typeSelect = document.getElementById('dl-manual-types');
+  const neighborhoods = [...(nbhdSelect?.selectedOptions || [])].map(o => o.value);
+  const business_types = [...(typeSelect?.selectedOptions || [])].map(o => o.value);
+
+  try {
+    const r = await fetch('/api/intel/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: document.getElementById('dl-manual-title')?.value.trim() || '',
+        body,
+        neighborhoods,
+        business_types,
+        sentiment: document.getElementById('dl-manual-sentiment')?.value || 'neutral',
+        source_url: document.getElementById('dl-manual-url')?.value.trim() || '',
+      }),
+    });
+    const data = await r.json();
+    if (data.success) {
+      if (statusEl) statusEl.textContent = `Saved (ID ${data.id})`;
+      document.getElementById('dl-manual-body').value = '';
+      document.getElementById('dl-manual-title').value = '';
+      document.getElementById('dl-manual-url').value = '';
+      await refreshDlStats();
+    } else {
+      if (statusEl) statusEl.textContent = `Error: ${data.error}`;
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+  }
+  if (btn) btn.disabled = false;
+}
+
+// Query stored database for community intel, synthesize with AI
+async function runStoredCommunityAnalysis() {
+  const btn = document.getElementById('comm-db-btn');
+  const result = document.getElementById('comm-result');
+  const body = document.getElementById('comm-result-body');
+  btn.disabled = true;
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Querying intelligence database...</span>';
+
+  const nbhd = document.getElementById('cc-nbhd')?.value.trim() || '';
+  const concept = document.getElementById('cc-concept')?.value.trim() || '';
+  const typeEl = document.getElementById('cc-type');
+  const bizType = typeEl ? typeEl.value : '';
+
+  const params = new URLSearchParams({ limit: 50 });
+  if (nbhd) params.set('neighborhood', nbhd);
+  if (bizType) params.set('business_type', bizType.toLowerCase().replace(/[^a-z_]/g, '_'));
+
+  try {
+    const data = await fetch(`/api/intel/community?${params}`).then(r => r.json());
+    const records = data.records || [];
+
+    if (!records.length) {
+      body.innerHTML = `<span style="color:var(--warn);">No stored intelligence found for ${nbhd || 'this area'}${bizType ? ' / ' + bizType : ''}. Run a collection in the Data Library first, or use Paste Content / Pull Live Reddit instead.</span>`;
+      btn.disabled = false;
+      return;
+    }
+
+    // Build context block from stored records
+    const context = records.map(r =>
+      `[${r.source.toUpperCase()} · ${(r.neighborhoods||[]).join(', ')||'KC'} · ${r.sentiment||'neutral'}] ${r.title||''}\n${r.body ? r.body.substring(0,300) : ''}`
+    ).join('\n\n---\n\n');
+
+    body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Synthesizing ' + records.length + ' community intelligence records with AI...</span>';
+
+    const aiData = await callAI({
+      model: 'gpt-4o-mini', max_tokens: 900,
+      system: `You are PresageIQ synthesizing stored community intelligence data to evaluate a business concept. The data comes from Reddit posts, news articles, and local community sources — all real KC community signal. Be specific. Reference actual patterns from the data.`,
+      messages: [{ role: 'user', content: `CONCEPT BEING EVALUATED:\n${concept || 'Business concept'}\nNeighborhood: ${nbhd || 'Kansas City'}\nType: ${bizType || 'Not specified'}\n\nSTORED COMMUNITY INTELLIGENCE (${records.length} records from database):\n\n${context}\n\nSynthesize this intelligence. Structure:\n\n**DEMAND SIGNALS** — what do locals want or talk positively about in this space?\n\n**CAUTION SIGNALS** — what complaints, failures, or resistance patterns exist?\n\n**NEIGHBORHOOD CONTEXT** — what does the community data say about ${nbhd||'this area'} specifically?\n\n**DIRECT SIGNALS OF NOTE** — 2-3 specific posts or mentions that capture sentiment most clearly (paraphrase, don't quote verbatim)\n\n**COMMUNITY VERDICT** — one sentence on what this data says about viability of this concept here` }]
+    });
+
+    const text = aiData.content?.[0]?.text || '';
+    body.innerHTML = text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>') +
+      `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from ${records.length} stored records · ${data.total} total in database for these filters</div>`;
+    markConsultDone('c-community');
+  } catch(e) {
+    body.innerHTML = `<span style="color:var(--danger);">Query failed — ${e.message}</span>`;
+  }
   btn.disabled = false;
 }
 
