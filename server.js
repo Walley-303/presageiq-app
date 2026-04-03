@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
+const { gatherBusinessIntel } = require('./businessIntel');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -120,6 +121,25 @@ async function initDb() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bp_neighborhood ON business_profiles (neighborhood)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bp_business_type ON business_profiles (business_type)`);
+
+  // ── Business intelligence per client (audit use) ─────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS business_intel (
+      id                 SERIAL PRIMARY KEY,
+      client_id          INTEGER UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+      business_name      TEXT,
+      place_id           TEXT,
+      place_data         JSONB,
+      competitors        JSONB,
+      website_data       JSONB,
+      community_mentions JSONB,
+      ai_profile         TEXT,
+      ai_competitors     TEXT,
+      status             TEXT DEFAULT 'pending',
+      error_message      TEXT,
+      gathered_at        TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 
   // ── Collection job log ────────────────────────────────────────────────────
   await pool.query(`
@@ -355,6 +375,45 @@ app.post('/api/intel/manual', async (req, res) => {
   }
 });
 
+// ── GET /api/intel/business/:clientId ─ Get gathered business intelligence ───
+app.get('/api/intel/business/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const result = await pool.query(`SELECT * FROM business_intel WHERE client_id=$1`, [clientId]);
+    if (!result.rows.length) return res.json({ status: 'not_started' });
+    const row = result.rows[0];
+    // Parse JSONB fields
+    ['place_data', 'competitors', 'website_data', 'community_mentions'].forEach(f => {
+      if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
+    });
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/intel/business/:clientId ─ Trigger business intelligence gather ─
+app.post('/api/intel/business/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const client = await pool.query(`SELECT * FROM clients WHERE id=$1`, [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const { bizname, name, neighborhood } = client.rows[0];
+    const businessName = bizname || name;
+    if (!businessName) return res.status(400).json({ error: 'No business name on this client record' });
+
+    // Fire and return — gathering runs in background
+    gatherBusinessIntel(pool, clientId, businessName, neighborhood)
+      .catch(e => console.error(`[intel] Background gather error: ${e.message}`));
+
+    res.status(202).json({ started: true, message: `Intelligence gathering started for "${businessName}"` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/contact ─ save client + send emails ────────────────────────────
 app.post('/api/contact', async (req, res) => {
   const { name, email, service, concept, neighborhood, phone, notes, bizname, biztype } = req.body;
@@ -370,6 +429,13 @@ app.post('/api/contact', async (req, res) => {
     const client = result.rows[0];
     sendEmails({ id: client.id, name, email, service, concept, neighborhood, phone, notes })
       .catch(err => console.error('Email send error:', err));
+
+    // Auto-trigger business intelligence gathering for audit requests
+    if (service === 'audit' && (bizname || name)) {
+      gatherBusinessIntel(pool, client.id, bizname || name, neighborhood || '')
+        .catch(e => console.error(`[intel] Auto-gather failed for client ${client.id}: ${e.message}`));
+    }
+
     res.json({ success: true, id: client.id });
   } catch (err) {
     console.error('Contact save error:', err);

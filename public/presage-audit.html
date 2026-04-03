@@ -364,34 +364,47 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <!-- 03 REVIEW SIGNALS -->
     <div class="panel" id="panel-reviews">
       <div class="panel-head">
-        <div class="panel-title">Review Signal Extraction</div>
-        <div class="panel-desc">Paste raw reviews from any source. PresageIQ extracts what customers love, what they complain about, and what they're asking for that doesn't exist yet.</div>
+        <div class="panel-title">Review &amp; Reputation Intelligence</div>
+        <div class="panel-desc">Auto-gathered from Google Maps, community sources, and web. Triggered automatically when a client submits an audit request.</div>
       </div>
       <div class="panel-body">
-        <div class="field-group">
-          <div class="field-group-title">Paste Reviews</div>
-          <div class="field-row one">
-            <div class="field"><label>Google Reviews</label><textarea class="fta" id="r-google" placeholder="Paste Google reviews here — copy/paste from Google Maps or your GMB dashboard..." style="min-height:100px;"></textarea></div>
+
+        <!-- Auto-gathered intel status + display -->
+        <div id="review-intel-block">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+            <button class="run-btn purple" id="review-intel-btn" onclick="loadReviewIntel()">◎ Load Business Intelligence</button>
+            <button class="run-btn teal" id="review-reddit-btn" onclick="scanRedditReviews()">◎ Scan Reddit for Mentions</button>
+            <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('reviews','N/A')">N/A</button>
           </div>
-          <div class="field-row one">
-            <div class="field"><label>Yelp Reviews</label><textarea class="fta" id="r-yelp" placeholder="Paste Yelp reviews here..." style="min-height:80px;"></textarea></div>
-          </div>
-          <div class="field-row one">
-            <div class="field"><label>Social / Other (Facebook, Nextdoor, TikTok comments, etc.)</label><textarea class="fta" id="r-social" placeholder="Paste any other community content here..." style="min-height:80px;"></textarea></div>
-          </div>
+          <div id="review-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;"></div>
         </div>
 
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <button class="run-btn" id="review-run-btn" onclick="analyzeReviews()">◎ Extract Review Signals</button>
-          <button class="run-btn teal" id="review-reddit-btn" onclick="scanRedditReviews()">◎ Scan Reddit for Mentions</button>
-          <button class="run-btn" style="background:rgba(200,150,62,.08);border-color:rgba(200,150,62,.25);color:var(--gold);" onclick="generateReviewResearchBrief()">◎ Generate Research Brief</button>
-          <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('reviews','N/A')">N/A</button>
+        <!-- Business profile card (populated from intel) -->
+        <div id="biz-profile-card" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:16px 18px;margin-bottom:16px;">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Rating</div><div id="bip-rating" style="font-size:18px;color:var(--gold);font-weight:600;">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Price</div><div id="bip-price" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Category</div><div id="bip-type" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Reviews</div><div id="bip-count" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Website</div><div id="bip-web" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Photos</div><div id="bip-photos" style="font-size:13px;color:var(--text2);">—</div></div>
+          </div>
+          <div id="bip-attrs" style="font-size:10px;color:var(--text3);display:flex;gap:10px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border);"></div>
+          <div id="bip-overview" style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.6;font-style:italic;"></div>
         </div>
 
+        <!-- AI Review Analysis (auto-populated) -->
         <div class="ai-result" id="review-result">
-          <div class="ai-result-header"><span class="ai-result-label">◎ Review Signals — PresageIQ</span></div>
+          <div class="ai-result-header"><span class="ai-result-label">◎ Review &amp; Reputation Intelligence — PresageIQ</span></div>
           <div id="review-result-body"></div>
         </div>
+
+        <!-- Supplementary notes only -->
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Supplementary Notes</div>
+          <textarea class="fta" id="r-notes" placeholder="Add any additional context not captured automatically — staff observations, owner-provided info, in-session notes..." style="min-height:60px;"></textarea>
+        </div>
+
       </div>
     </div>
 
@@ -440,33 +453,35 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div class="panel" id="panel-competitors">
       <div class="panel-head">
         <div class="panel-title">Competitor Gap Analysis</div>
-        <div class="panel-desc">Map the competitive landscape. PresageIQ identifies what competitors are winning on, what they're leaving open, and where to compete or differentiate.</div>
+        <div class="panel-desc">Auto-gathered from Google Maps — all eateries within 5 miles, ratings, and AI gap analysis. Triggered automatically on audit submission.</div>
       </div>
       <div class="panel-body">
-        <div class="field-group">
-          <div class="field-group-title">Key Competitors</div>
-          <div class="field-row one">
-            <div class="field"><label>List main competitors (name, type, proximity)</label>
-              <textarea class="fta" id="comp-list" placeholder="e.g.&#10;1. The Farmhouse — farm-to-table, 3 blocks away&#10;2. Bella Napoli — Italian, same street&#10;3. Local brewpub — casual dining, competing for same demographic..." style="min-height:100px;"></textarea>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>What are competitors winning on?</label><textarea class="fta" id="comp-wins" placeholder="What's drawing customers to them? Better ambiance, specific dish, price, loyalty?" style="min-height:70px;"></textarea></div>
-            <div class="field"><label>What are competitors NOT doing well?</label><textarea class="fta" id="comp-gaps" placeholder="Complaints you've seen in their reviews, gaps in their menu or service..." style="min-height:70px;"></textarea></div>
-          </div>
-        </div>
 
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <button class="run-btn" id="comp-run-btn" onclick="analyzeCompetitors()">◎ Run Competitor Analysis</button>
-          <button class="run-btn teal" id="comp-reddit-btn" onclick="scanCompetitorReddit()">◎ Scan Reddit for Competitor Mentions</button>
-          <button class="run-btn" style="background:rgba(200,150,62,.08);border-color:rgba(200,150,62,.25);color:var(--gold);" onclick="aiIdentifyCompetitors()">◎ AI Identify Competitors</button>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="comp-intel-btn" onclick="loadCompetitorIntel()">◎ Load Competitor Intelligence</button>
+          <button class="run-btn teal" id="comp-reddit-btn" onclick="scanCompetitorReddit()">◎ Scan Reddit for Mentions</button>
           <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('competitors','N/A')">N/A</button>
         </div>
+        <div id="comp-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;"></div>
 
+        <!-- Auto-populated competitor list -->
+        <div id="comp-list-auto" style="display:none;margin-bottom:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Nearby Competitors — Auto-Gathered</div>
+          <div id="comp-list-cards" style="display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- AI Gap Analysis (auto-populated) -->
         <div class="ai-result" id="comp-result">
-          <div class="ai-result-header"><span class="ai-result-label">◎ Competitor Analysis — PresageIQ</span></div>
+          <div class="ai-result-header"><span class="ai-result-label">◎ Competitor Gap Analysis — PresageIQ</span></div>
           <div id="comp-result-body"></div>
         </div>
+
+        <!-- Manual supplement -->
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Additional Competitor Notes</div>
+          <textarea class="fta" id="comp-notes" placeholder="Add context not captured automatically — niche competitors, recent openings, owner intelligence..." style="min-height:60px;"></textarea>
+        </div>
+
       </div>
     </div>
 
@@ -1210,10 +1225,11 @@ async function analyzeCompetitors() {
 async function scanCompetitorReddit() {
   const btn = document.getElementById('comp-reddit-btn');
   btn.disabled=true;
-  const compText = document.getElementById('comp-list').value;
   const nbhd = document.getElementById('s-nbhd').value;
-  const firstComp = compText.split('\n')[0].replace(/^\d+\.\s*/,'').split('—')[0].trim();
-  if(!firstComp) { alert('Add at least one competitor first.'); btn.disabled=false; return; }
+  const biz = document.getElementById('s-biz').value.trim();
+  // Use business name + neighborhood to search for competitor mentions
+  const firstComp = nbhd || biz;
+  if(!firstComp) { alert('Load a client with a business name or neighborhood first.'); btn.disabled=false; return; }
   const result = document.getElementById('comp-result');
   const body = document.getElementById('comp-result-body');
   result.classList.add('visible');
@@ -1273,6 +1289,192 @@ function buildBrief() { showPanel('brief'); generateBrief(); }
 // =============================================
 function escHtml(str){if(!str)return'';return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function timeAgo(utc){const s=Math.floor(Date.now()/1000)-utc;if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
+
+// =============================================
+// BUSINESS INTEL — LOAD & DISPLAY
+// =============================================
+let currentClientId = null;
+let intelPollTimer = null;
+
+async function loadReviewIntel() {
+  const btn = document.getElementById('review-intel-btn');
+  const statusEl = document.getElementById('review-intel-status');
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+
+  if (!currentClientId) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn);">Load a client from the Client Queue first.</span>';
+    return;
+  }
+  btn.disabled = true;
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  if (statusEl) statusEl.innerHTML = 'Loading business intelligence...';
+
+  clearInterval(intelPollTimer);
+  intelPollTimer = setInterval(() => checkIntelStatus('review'), 4000);
+  await checkIntelStatus('review');
+  btn.disabled = false;
+}
+
+async function loadCompetitorIntel() {
+  const btn = document.getElementById('comp-intel-btn');
+  const statusEl = document.getElementById('comp-intel-status');
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+
+  if (!currentClientId) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn);">Load a client from the Client Queue first.</span>';
+    return;
+  }
+  btn.disabled = true;
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  if (statusEl) statusEl.innerHTML = 'Loading competitor intelligence...';
+
+  clearInterval(intelPollTimer);
+  intelPollTimer = setInterval(() => checkIntelStatus('competitors'), 4000);
+  await checkIntelStatus('competitors');
+  btn.disabled = false;
+}
+
+async function checkIntelStatus(target) {
+  try {
+    const resp = await fetch(`/api/intel/business/${currentClientId}`);
+    const data = await resp.json();
+    const status = data?.status || 'pending';
+    const reviewStatusEl = document.getElementById('review-intel-status');
+    const compStatusEl = document.getElementById('comp-intel-status');
+
+    if (status === 'gathering' || status === 'synthesizing') {
+      const msg = status === 'gathering' ? 'Gathering data from Google Maps...' : 'Synthesizing intelligence with AI...';
+      if (reviewStatusEl) reviewStatusEl.innerHTML = `<span style="color:var(--warn);">${msg}</span>`;
+      if (compStatusEl) compStatusEl.innerHTML = `<span style="color:var(--warn);">${msg}</span>`;
+      return; // Keep polling
+    }
+
+    clearInterval(intelPollTimer);
+    intelPollTimer = null;
+
+    if (status === 'error') {
+      const errMsg = escHtml(data.error_message || 'Unknown error');
+      if (reviewStatusEl) reviewStatusEl.innerHTML = `<span style="color:var(--danger);">Error: ${errMsg}</span>`;
+      if (compStatusEl) compStatusEl.innerHTML = `<span style="color:var(--danger);">Error: ${errMsg}</span>`;
+      document.getElementById('review-result-body').innerHTML = `<span style="color:var(--danger);">Intel gathering failed: ${errMsg}<br><br>Check that GOOGLE_PLACES_API_KEY is configured in Railway and the business name matches its Google Maps listing exactly.</span>`;
+      document.getElementById('comp-result-body').innerHTML = `<span style="color:var(--danger);">Intel gathering failed: ${errMsg}</span>`;
+      return;
+    }
+
+    if (status === 'complete') {
+      const place = data.place_data || {};
+      const competitors = data.competitors || [];
+      const gathered = data.gathered_at ? new Date(data.gathered_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const statusTag = `<span style="color:var(--teal);">◎ Gathered ${gathered}</span>`;
+      if (reviewStatusEl) reviewStatusEl.innerHTML = statusTag;
+      if (compStatusEl) compStatusEl.innerHTML = statusTag;
+
+      populateBizProfileCard(place);
+
+      if (target !== 'competitors') {
+        const reviewBody = document.getElementById('review-result-body');
+        reviewBody.innerHTML = data.ai_profile
+          ? data.ai_profile.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>')
+          : '<span style="color:var(--text3);">No review analysis available — check that OPENAI_API_KEY is configured.</span>';
+        markDone('reviews');
+      }
+
+      if (target !== 'review') {
+        const compBody = document.getElementById('comp-result-body');
+        compBody.innerHTML = data.ai_competitors
+          ? data.ai_competitors.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>')
+          : '<span style="color:var(--text3);">No competitor analysis available.</span>';
+        if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
+        markDone('competitors');
+      }
+      return;
+    }
+
+    // pending
+    const msg = 'Intelligence not yet gathered. Submit an audit request or wait for background collection.';
+    if (reviewStatusEl) reviewStatusEl.innerHTML = `<span style="color:var(--text3);">${msg}</span>`;
+    if (compStatusEl) compStatusEl.innerHTML = `<span style="color:var(--text3);">${msg}</span>`;
+    document.getElementById('review-result-body').innerHTML = `<span style="color:var(--text3);">No data yet. Intelligence is gathered automatically when an audit is submitted.</span>`;
+    document.getElementById('comp-result-body').innerHTML = `<span style="color:var(--text3);">No data yet.</span>`;
+  } catch(e) {
+    clearInterval(intelPollTimer);
+    intelPollTimer = null;
+    document.getElementById('review-result-body').innerHTML = `<span style="color:var(--danger);">Failed to load intel — ${escHtml(e.message)}</span>`;
+  }
+}
+
+function populateBizProfileCard(place) {
+  const card = document.getElementById('biz-profile-card');
+  if (!card || !place || !place.rating) return;
+  card.style.display = 'block';
+
+  const PRICE_LABELS = {
+    PRICE_LEVEL_FREE:'Free', PRICE_LEVEL_INEXPENSIVE:'$ (Under $10)',
+    PRICE_LEVEL_MODERATE:'$$ ($10–$20)', PRICE_LEVEL_EXPENSIVE:'$$$ ($20–$40)',
+    PRICE_LEVEL_VERY_EXPENSIVE:'$$$$ ($40+)'
+  };
+  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+
+  setText('bip-rating', place.rating ? `${place.rating}★` : null);
+  setText('bip-price', PRICE_LABELS[place.priceLevel] || null);
+  setText('bip-count', place.userRatingCount ? `${place.userRatingCount.toLocaleString()} reviews` : null);
+  setText('bip-web', place.websiteUri ? '✓ Yes' : 'None found');
+
+  const types = (place.types || []).filter(t => !['point_of_interest','establishment','food','locality','political'].includes(t));
+  setText('bip-type', types.slice(0,2).map(t => t.replace(/_/g,' ')).join(', ') || null);
+  setText('bip-photos', (place.photos || []).length ? `${(place.photos||[]).length} on Maps` : '0');
+
+  const attrsEl = document.getElementById('bip-attrs');
+  if (attrsEl) {
+    const attrs = [];
+    if (place.dineIn) attrs.push('Dine-in');
+    if (place.takeout) attrs.push('Takeout');
+    if (place.delivery) attrs.push('Delivery');
+    if (place.reservable) attrs.push('Reservations');
+    if (place.outdoorSeating) attrs.push('Outdoor seating');
+    if (place.liveMusic) attrs.push('Live music');
+    attrsEl.innerHTML = attrs.map(a => `<span style="background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 8px;border-radius:2px;">${a}</span>`).join('');
+  }
+
+  const overviewEl = document.getElementById('bip-overview');
+  if (overviewEl) overviewEl.textContent = place.editorialSummary?.text || '';
+}
+
+function renderCompetitorCards(competitors, excludeId) {
+  const container = document.getElementById('comp-list-auto');
+  const cards = document.getElementById('comp-list-cards');
+  if (!container || !cards) return;
+
+  const PRICE_SYM = {
+    PRICE_LEVEL_FREE:'Free', PRICE_LEVEL_INEXPENSIVE:'$',
+    PRICE_LEVEL_MODERATE:'$$', PRICE_LEVEL_EXPENSIVE:'$$$',
+    PRICE_LEVEL_VERY_EXPENSIVE:'$$$$'
+  };
+  const nearby = competitors.filter(c => c.id !== excludeId).slice(0, 20);
+  if (!nearby.length) return;
+
+  cards.innerHTML = nearby.map(c => {
+    const name = c.displayName?.text || 'Unknown';
+    const rating = c.rating ? `${c.rating}★` : '—';
+    const reviews = c.userRatingCount ? `(${c.userRatingCount.toLocaleString()})` : '';
+    const price = PRICE_SYM[c.priceLevel] || '';
+    const type = (c.primaryType || '').replace(/_/g,' ');
+    const ratingColor = c.rating >= 4.5 ? 'var(--teal)' : c.rating >= 4.0 ? 'var(--text2)' : c.rating >= 3.5 ? 'var(--warn)' : 'var(--danger)';
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:10px;">
+      <span style="color:${ratingColor};font-size:12px;font-weight:600;min-width:36px;">${rating}</span>
+      <span style="color:var(--text3);font-size:10px;min-width:40px;">${reviews}</span>
+      <span style="flex:1;font-size:11px;color:var(--text);">${escHtml(name)}</span>
+      <span style="font-size:10px;color:var(--text3);">${price}</span>
+      <span style="font-size:9px;color:var(--text3);text-transform:capitalize;">${type}</span>
+    </div>`;
+  }).join('');
+
+  container.style.display = 'block';
+}
 
 // =============================================
 // MODE SWITCHING
@@ -1624,6 +1826,7 @@ async function updateClientStatus(id, status) {
 function loadClientIntoSession(id, mode) {
   const cl = allClients.find(c => c.id === id);
   if (!cl) return;
+  currentClientId = id;
 
   // Populate audit setup fields
   const map = {
