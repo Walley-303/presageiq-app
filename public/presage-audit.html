@@ -1254,18 +1254,46 @@ async function generateBrief() {
   const btn = document.getElementById('brief-run-btn');
   const output = document.getElementById('brief-output');
   btn.disabled = true;
+  output.innerHTML = '<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;padding:20px 0;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Loading intelligence data...</div>';
+
+  // Pull from panel displays first, then supplement with raw intel from API
+  const menuResult = document.getElementById('menu-result-body').innerText;
+  const invResult = document.getElementById('inv-result-body').innerText;
+
+  // Fetch full intel from API to get ai_profile + ai_competitors + raw place data
+  let aiProfile = document.getElementById('review-result-body').innerText;
+  let aiCompetitors = document.getElementById('comp-result-body').innerText;
+  let placeData = null;
+  let websiteData = null;
+  let menuText = '';
+
+  if (currentClientId) {
+    try {
+      const intelResp = await fetch(`/api/intel/business/${currentClientId}`);
+      const intel = await intelResp.json();
+      if (intel?.status === 'complete') {
+        if (intel.ai_profile) aiProfile = intel.ai_profile;
+        if (intel.ai_competitors) aiCompetitors = intel.ai_competitors;
+        placeData = intel.place_data;
+        websiteData = intel.website_data;
+        menuText = websiteData?.menuText || websiteData?.homeText || '';
+        // Silently populate panels if not already done
+        if (!moduleDone.reviews || !moduleDone.competitors) silentlyPopulateIntel(intel);
+      }
+    } catch(e) {}
+  }
+
   output.innerHTML = '<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;padding:20px 0;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Generating Presage Brief Extended...</div>';
 
-  const menuResult = document.getElementById('menu-result-body').innerText;
-  const reviewResult = document.getElementById('review-result-body').innerText;
-  const invResult = document.getElementById('inv-result-body').innerText;
-  const compResult = document.getElementById('comp-result-body').innerText;
+  // Build place summary for the prompt
+  const placeContext = placeData ? `Google Maps Data: ${placeData.rating || 'N/A'}★ rating, ${placeData.userRatingCount || 0} reviews, Price: ${placeData.priceLevel || 'unknown'}, Website: ${placeData.websiteUri ? 'Yes' : 'None'}` : '';
+  const menuContext = menuText ? `\n\nMENU / WEBSITE CONTENT (scraped):\n${menuText.substring(0, 1200)}` : '';
 
   try {
     const data = await callAI({
-      model:'gpt-4o-mini', max_tokens:1500,
-      system:`You are PresageIQ writing a Presage Brief Extended — a professional business intelligence report delivered to a client after a full audit engagement. Write in a clear, authoritative, professional tone. This document will be sent directly to the client. Format it as a structured report. Use ** for bold headers.`,
-      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ANALYSIS FINDINGS:\n${menuResult||'Not completed'}\n\nREVIEW SIGNAL FINDINGS:\n${reviewResult||'Not completed'}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR ANALYSIS FINDINGS:\n${compResult||'Not completed'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz').value||'Client Business'} · ${document.getElementById('s-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the overall state of this business and the single most important thing they need to do)\n\n**WHAT'S WORKING** (strengths to protect and amplify)\n\n**WHAT NEEDS TO CHANGE** (honest list of problems, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (specific item actions)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement — acknowledge the challenge, affirm the opportunity)\n\nBe specific. Reference actual data from the findings. This is a $2,500 deliverable — write accordingly.`}]
+      model:'gpt-4o-mini', max_tokens:1800,
+      system:`You are PresageIQ writing a Presage Brief Extended — a professional business intelligence report delivered to a client after a full audit engagement. Write in a clear, authoritative, professional tone. This document will be sent directly to the client. Format it as a structured report. Use ** for bold headers. When Google Maps data or website content is provided, reference it specifically — cite actual ratings, review counts, menu items. Do NOT write generic placeholder text.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n${placeContext}\n\nREVIEW & REPUTATION INTELLIGENCE:\n${aiProfile||'Not yet gathered'}\n\nMENU ANALYSIS:\n${menuResult||'Not manually entered'}${menuContext}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR INTELLIGENCE:\n${aiCompetitors||'Not yet gathered'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz').value||'Client Business'} · ${document.getElementById('s-nbhd').value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the actual state of this business based on the data above, and the single most critical action)\n\n**WHAT'S WORKING** (specific strengths from the data — reference actual ratings, specific review themes, menu items praised)\n\n**WHAT NEEDS TO CHANGE** (specific problems from the data, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (if menu data exists, reference specific items by name)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out vs. the identified competitors)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement)\n\nBe specific. Reference actual data. This is a $2,500 deliverable — write accordingly. If data for a section is genuinely absent, say so briefly and move on — do not pad with generic advice.`}]
     });
     const text = data.content?.[0]?.text||'';
     output.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${
@@ -1869,6 +1897,8 @@ function loadClientIntoSession(id, mode) {
   } else {
     setMode('audit');
     showPanel('setup');
+    // AUTO-TRIGGER: start gathering intel immediately on audit load
+    autoTriggerIntel(id);
   }
 
   // Mark as active
@@ -1877,6 +1907,109 @@ function loadClientIntoSession(id, mode) {
   // Show confirmation
   const pill = document.querySelector('.client-pill');
   if (pill) pill.textContent = cl.name + ' · ' + (cl.service === 'consult' ? 'Consult' : 'Audit');
+}
+
+// Auto-trigger intel on client load — checks if already gathered, triggers if not, polls silently
+async function autoTriggerIntel(clientId) {
+  try {
+    // First check current status
+    const check = await fetch(`/api/intel/business/${clientId}`);
+    const existing = await check.json();
+    const status = existing?.status;
+
+    if (status === 'complete') {
+      // Already done — silently populate all panels
+      silentlyPopulateIntel(existing);
+      return;
+    }
+
+    if (status === 'gathering' || status === 'synthesizing') {
+      // Already running — just start polling
+      setIntelStatusBanners('gathering');
+      startIntelPoll(clientId);
+      return;
+    }
+
+    // not_started, pending, error, or missing — trigger now
+    setIntelStatusBanners('gathering');
+    await fetch(`/api/intel/business/${clientId}`, { method: 'POST' });
+    startIntelPoll(clientId);
+  } catch(e) {
+    // Silently fail — don't interrupt the agent workflow
+    console.warn('[intel] Auto-trigger failed:', e.message);
+  }
+}
+
+function setIntelStatusBanners(state) {
+  const msgs = {
+    gathering: '<span style="color:var(--warn);">◉ Gathering from Google Maps...</span>',
+    synthesizing: '<span style="color:var(--warn);">◉ Synthesizing with AI...</span>',
+    complete: '<span style="color:var(--teal);">◎ Intelligence ready</span>',
+    error: '<span style="color:var(--danger);">⚠ Intel gather failed — click Load Business Intelligence to retry</span>'
+  };
+  const msg = msgs[state] || '';
+  ['review-intel-status', 'comp-intel-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = msg;
+  });
+}
+
+function startIntelPoll(clientId) {
+  clearInterval(intelPollTimer);
+  intelPollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/intel/business/${clientId}`);
+      const data = await resp.json();
+      const status = data?.status;
+      if (status === 'synthesizing') setIntelStatusBanners('synthesizing');
+      if (status === 'complete') {
+        clearInterval(intelPollTimer);
+        intelPollTimer = null;
+        silentlyPopulateIntel(data);
+      }
+      if (status === 'error') {
+        clearInterval(intelPollTimer);
+        intelPollTimer = null;
+        setIntelStatusBanners('error');
+      }
+    } catch(e) {}
+  }, 5000);
+}
+
+function silentlyPopulateIntel(data) {
+  const place = data.place_data || {};
+  const competitors = data.competitors || [];
+  const gathered = data.gathered_at ? new Date(data.gathered_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  setIntelStatusBanners('complete');
+  ['review-intel-status','comp-intel-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<span style="color:var(--teal);">◎ Intelligence ready · gathered ${gathered}</span>`;
+  });
+
+  populateBizProfileCard(place);
+
+  // Populate review panel
+  const reviewResult = document.getElementById('review-result');
+  const reviewBody = document.getElementById('review-result-body');
+  if (reviewBody && data.ai_profile) {
+    reviewResult?.classList.add('visible');
+    reviewBody.innerHTML = data.ai_profile
+      .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>')
+      .replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('reviews');
+  }
+
+  // Populate competitor panel
+  const compResult = document.getElementById('comp-result');
+  const compBody = document.getElementById('comp-result-body');
+  if (compBody && data.ai_competitors) {
+    compResult?.classList.add('visible');
+    compBody.innerHTML = data.ai_competitors
+      .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>')
+      .replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
+    markDone('competitors');
+  }
 }
 
 // =============================================
