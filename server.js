@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
-const { gatherBusinessIntel } = require('./businessIntel');
+const { gatherBusinessIntel, extractMenuFromImage } = require('./businessIntel');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -144,6 +144,20 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_menu_items TEXT`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_photo_subjects TEXT`);
+
+  // ── Menu uploads (agent/business-uploaded menu photos) ───────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS menu_uploads (
+      id             SERIAL PRIMARY KEY,
+      client_id      INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      filename       TEXT,
+      mime_type      TEXT,
+      image_data     TEXT,
+      label          TEXT DEFAULT 'Menu',
+      extracted_items TEXT,
+      uploaded_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 
   // ── Collection job log ────────────────────────────────────────────────────
   await pool.query(`
@@ -414,6 +428,64 @@ app.post('/api/intel/business/:clientId', async (req, res) => {
 
     res.status(202).json({ started: true, message: `Intelligence gathering started for "${businessName}"` });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/intel/menu-upload/:clientId ─ Upload + extract menu from image ──
+app.post('/api/intel/menu-upload/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  const { imageBase64, mimeType, filename, label } = req.body;
+  if (!imageBase64 || !mimeType) return res.status(400).json({ error: 'imageBase64 and mimeType required' });
+  try {
+    // Extract items via vision AI
+    const extracted = await extractMenuFromImage(imageBase64, mimeType, label || 'Menu');
+
+    // Store upload + extracted items
+    const result = await pool.query(`
+      INSERT INTO menu_uploads (client_id, filename, mime_type, image_data, label, extracted_items)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, uploaded_at
+    `, [clientId, filename || 'menu', mimeType, imageBase64, label || 'Menu', JSON.stringify(extracted)]);
+
+    res.json({ success: true, upload_id: result.rows[0].id, items: extracted, count: extracted.length });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/intel/menu-uploads/:clientId ─ List all menu uploads for client ─
+app.get('/api/intel/menu-uploads/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const result = await pool.query(`
+      SELECT id, filename, label, mime_type, extracted_items, uploaded_at
+      FROM menu_uploads WHERE client_id=$1 ORDER BY uploaded_at DESC
+    `, [clientId]);
+    const rows = result.rows.map(r => ({
+      ...r,
+      extracted_items: typeof r.extracted_items === 'string' ? JSON.parse(r.extracted_items) : (r.extracted_items || [])
+    }));
+    res.json(rows);
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/intel/menu-uploads/:clientId/image/:uploadId ─ Return image data ─
+app.get('/api/intel/menu-uploads/:clientId/image/:uploadId', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT mime_type, image_data FROM menu_uploads WHERE id=$1 AND client_id=$2`,
+      [req.params.uploadId, req.params.clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+    const { mime_type, image_data } = result.rows[0];
+    const buf = Buffer.from(image_data, 'base64');
+    res.set('Content-Type', mime_type);
+    res.send(buf);
+  } catch(err) {
     res.status(500).json({ error: err.message });
   }
 });

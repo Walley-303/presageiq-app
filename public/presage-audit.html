@@ -351,7 +351,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <button class="run-btn purple" id="menu-auto-btn" onclick="autoPopulateMenu()">◎ Auto-populate from Website &amp; Photos</button>
           <button class="run-btn" id="menu-run-btn" onclick="analyzeMenu()">◎ Run Menu Analysis</button>
-          <button class="run-btn teal" id="menu-reddit-btn" onclick="scanMenuReddit()">◎ Scan Community for Item Signals</button>
           <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('menu','N/A')">N/A — Not Applicable</button>
           <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('menu','TBD')">TBD — Return Later</button>
         </div>
@@ -360,6 +359,51 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <div class="ai-result-header"><span class="ai-result-label">◎ Menu Analysis — PresageIQ</span></div>
           <div id="menu-result-body"></div>
         </div>
+
+        <!-- ── Menu Upload Section ── -->
+        <div class="field-group" style="margin-top:20px;">
+          <div class="field-group-title" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>📋 Menu Uploads</span>
+            <span style="font-size:9px;color:var(--text3);font-weight:400;letter-spacing:0;">Upload photos of any menus — vision AI will extract items for comparison</span>
+          </div>
+
+          <!-- Upload controls -->
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+            <div class="field" style="flex:1;min-width:180px;">
+              <label>Menu Type</label>
+              <select id="menu-upload-label" style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;color:var(--text1);padding:7px 10px;font-size:12px;">
+                <option value="Menu">Main Menu</option>
+                <option value="Happy Hour">Happy Hour</option>
+                <option value="Brunch">Brunch</option>
+                <option value="Holiday Special">Holiday Special</option>
+                <option value="Seasonal">Seasonal / Event Special</option>
+                <option value="Drinks">Drink Menu</option>
+                <option value="Dessert">Dessert Menu</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="field" style="flex:2;min-width:200px;">
+              <label>Photo File</label>
+              <input type="file" id="menu-upload-file" accept="image/*" multiple style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;color:var(--text2);padding:6px 10px;font-size:11px;" onchange="previewMenuUpload(this)">
+            </div>
+            <button class="run-btn purple" id="menu-upload-btn" onclick="uploadMenuPhoto()" style="white-space:nowrap;">⬆ Extract &amp; Save</button>
+          </div>
+          <div id="menu-upload-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
+          <div id="menu-upload-status" style="font-size:11px;color:var(--text3);min-height:14px;margin-bottom:10px;"></div>
+
+          <!-- Saved uploads list -->
+          <div id="menu-uploads-list" style="display:none;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Saved Menus</div>
+            <div id="menu-uploads-cards" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+        </div>
+
+        <!-- ── Menu Intelligence Comparison ── -->
+        <div id="menu-comparison-block" style="display:none;margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">◎ Menu Intelligence — Gap Analysis</div>
+          <div id="menu-comparison-body" style="font-size:12px;color:var(--text2);line-height:1.7;"></div>
+        </div>
+
       </div>
     </div>
 
@@ -375,7 +419,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div id="review-intel-block">
           <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
             <button class="run-btn purple" id="review-intel-btn" onclick="loadReviewIntel()">◎ Load Business Intelligence</button>
-            <button class="run-btn teal" id="review-reddit-btn" onclick="scanRedditReviews()">◎ Scan Reddit for Mentions</button>
             <button class="run-btn" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text3);" onclick="skipModule('reviews','N/A')">N/A</button>
           </div>
           <div id="review-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;"></div>
@@ -1409,6 +1452,7 @@ async function checkIntelStatus(target) {
       if (compStatusEl) compStatusEl.innerHTML = statusTag;
 
       populateBizProfileCard(place);
+      if (data.ai_photo_subjects?.length) renderPhotoSubjects(data.ai_photo_subjects);
 
       if (target !== 'competitors') {
         const reviewBody = document.getElementById('review-result-body');
@@ -1553,6 +1597,248 @@ async function autoPopulateMenu() {
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger);">Failed: ${escHtml(e.message)}</span>`;
   }
   btn.disabled = false;
+}
+
+// =============================================
+// MENU UPLOADS
+// =============================================
+
+function previewMenuUpload(input) {
+  const container = document.getElementById('menu-upload-preview');
+  if (!container) return;
+  container.innerHTML = '';
+  const files = Array.from(input.files || []);
+  files.forEach(file => {
+    const url = URL.createObjectURL(file);
+    container.innerHTML += `<div style="position:relative;width:80px;height:80px;border-radius:4px;overflow:hidden;border:1px solid var(--border2);">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
+    </div>`;
+  });
+}
+
+async function uploadMenuPhoto() {
+  const fileInput = document.getElementById('menu-upload-file');
+  const labelEl = document.getElementById('menu-upload-label');
+  const statusEl = document.getElementById('menu-upload-status');
+  const btn = document.getElementById('menu-upload-btn');
+
+  if (!currentClientId) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn);">Load a client first.</span>';
+    return;
+  }
+  const files = Array.from(fileInput.files || []);
+  if (!files.length) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn);">Select at least one menu photo first.</span>';
+    return;
+  }
+
+  btn.disabled = true;
+  const label = labelEl.value || 'Menu';
+  let successCount = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--text3);">Processing ${i+1} of ${files.length}: ${escHtml(file.name)}...</span>`;
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          // Strip the data URL prefix — server just wants raw base64
+          const result = e.target.result;
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.substring(comma + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const resp = await fetch(`/api/intel/menu-upload/${currentClientId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mimeType: file.type, filename: file.name, label })
+      });
+      const result = await resp.json();
+      if (result.success) {
+        successCount++;
+      } else {
+        console.warn('Upload failed for', file.name, result.error);
+      }
+    } catch(e) {
+      console.error('Upload error:', e);
+    }
+  }
+
+  if (statusEl) {
+    if (successCount > 0) {
+      statusEl.innerHTML = `<span style="color:var(--teal);">◎ Uploaded &amp; extracted items from ${successCount} photo${successCount > 1 ? 's' : ''}.</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--danger);">Upload failed — check connection and try again.</span>`;
+    }
+  }
+
+  fileInput.value = '';
+  document.getElementById('menu-upload-preview').innerHTML = '';
+  btn.disabled = false;
+
+  if (successCount > 0) {
+    await loadMenuUploads();
+    await renderMenuComparison();
+  }
+}
+
+async function loadMenuUploads() {
+  if (!currentClientId) return;
+  try {
+    const resp = await fetch(`/api/intel/menu-uploads/${currentClientId}`);
+    if (!resp.ok) return;
+    const uploads = await resp.json();
+    renderMenuUploads(uploads);
+  } catch(e) { console.error('loadMenuUploads error:', e); }
+}
+
+function renderMenuUploads(uploads) {
+  const listEl = document.getElementById('menu-uploads-list');
+  const cardsEl = document.getElementById('menu-uploads-cards');
+  if (!listEl || !cardsEl) return;
+
+  if (!uploads?.length) { listEl.style.display = 'none'; return; }
+
+  listEl.style.display = 'block';
+  const LABEL_COLORS = {
+    'Menu':'var(--teal)', 'Happy Hour':'var(--gold)',
+    'Brunch':'#c084fc', 'Holiday Special':'#f87171',
+    'Seasonal':'#fb923c', 'Drinks':'#60a5fa',
+    'Dessert':'#f472b6', 'Other':'var(--text3)'
+  };
+
+  cardsEl.innerHTML = uploads.map(u => {
+    const items = u.extracted_items || [];
+    const labelColor = LABEL_COLORS[u.label] || 'var(--text3)';
+    const dateStr = u.uploaded_at ? new Date(u.uploaded_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+    const itemPreview = items.slice(0, 4).map(i => escHtml(i.name || i)).join(', ');
+    const moreCount = items.length > 4 ? ` +${items.length - 4} more` : '';
+
+    return `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:10px 14px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:10px;font-weight:600;color:${labelColor};text-transform:uppercase;letter-spacing:.5px;">${escHtml(u.label)}</span>
+        <span style="font-size:9px;color:var(--text3);">${escHtml(u.filename || 'Menu photo')}</span>
+        <span style="font-size:9px;color:var(--text3);margin-left:auto;">${dateStr}</span>
+        <a href="/api/intel/menu-uploads/${currentClientId}/image/${u.id}" target="_blank" style="font-size:9px;color:var(--teal);text-decoration:none;white-space:nowrap;">↗ View</a>
+      </div>
+      ${items.length ? `<div style="font-size:10px;color:var(--text2);">
+        <span style="color:var(--text3);">${items.length} items extracted:</span> ${itemPreview}${moreCount}
+      </div>` : `<div style="font-size:10px;color:var(--text3);font-style:italic;">No items extracted</div>`}
+    </div>`;
+  }).join('');
+}
+
+async function renderMenuComparison() {
+  if (!currentClientId) return;
+  const block = document.getElementById('menu-comparison-block');
+  const body = document.getElementById('menu-comparison-body');
+  if (!block || !body) return;
+
+  try {
+    const [intelResp, uploadsResp] = await Promise.all([
+      fetch(`/api/intel/business/${currentClientId}`),
+      fetch(`/api/intel/menu-uploads/${currentClientId}`)
+    ]);
+    const intel = await intelResp.json();
+    const uploads = await uploadsResp.json();
+
+    if (!uploads?.length && !intel?.ai_photo_subjects?.length) return;
+
+    block.style.display = 'block';
+
+    // Gather all uploaded menu items (deduplicated) by menu type
+    const uploadedByType = {};
+    for (const u of (uploads || [])) {
+      const label = u.label || 'Menu';
+      if (!uploadedByType[label]) uploadedByType[label] = [];
+      for (const item of (u.extracted_items || [])) {
+        const name = (typeof item === 'string') ? item : (item.name || '');
+        if (name && !uploadedByType[label].some(e => e.toLowerCase() === name.toLowerCase())) {
+          uploadedByType[label].push(name);
+        }
+      }
+    }
+
+    // Photo subjects — items customers are photographing
+    const photoSubjects = intel?.ai_photo_subjects || [];
+    const allUploadedNames = Object.values(uploadedByType).flat().map(n => n.toLowerCase());
+
+    // Find gaps: items photographed but not on any uploaded menu
+    const photoedButNotOnMenu = photoSubjects.filter(p =>
+      !allUploadedNames.some(n => n.includes(p.item.toLowerCase()) || p.item.toLowerCase().includes(n))
+    );
+
+    // Also check community/review mentions from ai_profile text for demand signals
+    let html = '';
+
+    // Section: Menu type breakdown
+    const typeEntries = Object.entries(uploadedByType);
+    if (typeEntries.length) {
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Uploaded Menu Coverage</div>
+        ${typeEntries.map(([type, items]) => {
+          const LABEL_COLORS = {'Menu':'var(--teal)','Happy Hour':'var(--gold)','Brunch':'#c084fc','Holiday Special':'#f87171','Seasonal':'#fb923c','Drinks':'#60a5fa','Dessert':'#f472b6','Other':'var(--text3)'};
+          const color = LABEL_COLORS[type] || 'var(--text3)';
+          return `<div style="margin-bottom:6px;">
+            <span style="font-size:10px;font-weight:600;color:${color};">${escHtml(type)}</span>
+            <span style="font-size:9px;color:var(--text3);margin-left:6px;">(${items.length} items)</span>
+            <div style="font-size:10px;color:var(--text2);margin-top:3px;">${items.slice(0,8).map(escHtml).join(' · ')}${items.length > 8 ? ` <span style="color:var(--text3);">+${items.length-8} more</span>` : ''}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+
+    // Section: Photo demand vs menu gaps
+    if (photoSubjects.length) {
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">📷 Customers Are Photographing</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          ${photoSubjects.map(p => {
+            const onMenu = allUploadedNames.some(n => n.includes(p.item.toLowerCase()) || p.item.toLowerCase().includes(n));
+            const badge = onMenu
+              ? `<span style="font-size:9px;color:var(--teal);margin-left:6px;">✓ On menu</span>`
+              : `<span style="font-size:9px;color:var(--gold);margin-left:6px;">⚠ Not found on uploaded menus</span>`;
+            const bars = '█'.repeat(Math.min(p.photos, 5)) + '░'.repeat(Math.max(0, 5 - p.photos));
+            return `<div style="display:flex;align-items:baseline;gap:8px;padding:3px 0;border-bottom:1px solid var(--border);">
+              <span style="font-size:10px;color:var(--gold);font-family:monospace;min-width:60px;">${bars}</span>
+              <span style="font-size:11px;color:var(--text);flex:1;">${escHtml(p.item)}</span>
+              <span style="font-size:9px;color:var(--text3);">${p.photos} photo${p.photos !== 1?'s':''}</span>
+              ${badge}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    // Section: Special menus check
+    const hasHappyHour = typeEntries.some(([t]) => t === 'Happy Hour');
+    const hasBrunch = typeEntries.some(([t]) => t === 'Brunch');
+    const hasSeasonal = typeEntries.some(([t]) => ['Holiday Special','Seasonal'].includes(t));
+    const missingSpecials = [
+      !hasHappyHour && 'Happy Hour',
+      !hasBrunch && 'Brunch',
+      !hasSeasonal && 'Seasonal / Holiday Specials'
+    ].filter(Boolean);
+
+    if (missingSpecials.length) {
+      html += `<div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:4px;padding:10px 14px;">
+        <div style="font-size:10px;font-weight:600;color:var(--gold);margin-bottom:6px;">⚠ Special Menus Not Yet Uploaded</div>
+        <div style="font-size:11px;color:var(--text2);">${missingSpecials.join(', ')} — upload photos if this business uses these. Community data often flags these as high-demand opportunities.</div>
+      </div>`;
+    }
+
+    if (!html) {
+      body.innerHTML = '<span style="color:var(--text3);font-size:11px;">Upload at least one menu photo to enable comparison.</span>';
+    } else {
+      body.innerHTML = html;
+    }
+  } catch(e) {
+    console.error('renderMenuComparison error:', e);
+  }
 }
 
 function renderCompetitorCards(competitors, excludeId) {
@@ -1982,6 +2268,9 @@ function loadClientIntoSession(id, mode) {
     showPanel('setup');
     // AUTO-TRIGGER: start gathering intel immediately on audit load
     autoTriggerIntel(id);
+    // Load any previously uploaded menus
+    loadMenuUploads();
+    renderMenuComparison();
   }
 
   // Mark as active
@@ -2094,6 +2383,9 @@ function silentlyPopulateIntel(data) {
     if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
     markDone('competitors');
   }
+
+  // Refresh menu comparison with fresh intel data
+  renderMenuComparison();
 }
 
 // =============================================

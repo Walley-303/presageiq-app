@@ -508,4 +508,50 @@ In one sentence: how should ${place.displayName?.text || businessName} position 
   console.log(`[intel] Complete for client ${clientId}`);
 }
 
-module.exports = { gatherBusinessIntel };
+// ── Extract menu items from an uploaded image (vision AI) ─────────────────────
+async function extractMenuFromImage(imageBase64, mimeType, label) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  const menuTypeContext = label && label !== 'Menu'
+    ? `This is specifically the "${label}" menu (e.g. happy hour, brunch, holiday special).`
+    : 'This is the main menu.';
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Extract every menu item you can read from this menu image. ${menuTypeContext}
+Output ONLY a valid JSON array. No commentary before or after. Format:
+[
+  {"name": "Wagyu Smash Burger", "price": "$18", "description": "double smash patty, american cheese, house sauce", "category": "Burgers", "menu_type": "${label || 'Menu'}"},
+  {"name": "Old Fashioned", "price": "$14", "description": null, "category": "Cocktails", "menu_type": "${label || 'Menu'}"}
+]
+Rules:
+- Include every item you can read, even partially
+- category = the section header it appears under (Starters, Entrees, Cocktails, etc.)
+- price = exact price as shown, null if not readable
+- description = item description if present, null if not
+- If the image is unreadable or not a menu, return []`
+          },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+        ]
+      }]
+    })
+  });
+  const data = await res.json();
+  const raw = data.choices?.[0]?.message?.content || '[]';
+  try {
+    const match = raw.match(/\[[\s\S]*\]/);
+    return match ? JSON.parse(match[0]) : [];
+  } catch(e) { return []; }
+}
+
+module.exports = { gatherBusinessIntel, extractMenuFromImage };
