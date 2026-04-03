@@ -42,7 +42,7 @@ async function findBusiness(name, neighborhood) {
       locationBias: {
         circle: {
           center: { latitude: 39.0997, longitude: -94.5786 },
-          radius: 60000, // 60km — covers KC metro
+          radius: 50000, // 50km max (API limit) — covers KC metro
         },
       },
     },
