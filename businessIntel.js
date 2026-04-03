@@ -126,6 +126,105 @@ async function scrapeWebsite(url) {
   }
 }
 
+// ── Analyze Google Maps photos with GPT-4o-mini vision ───────────────────────
+async function analyzePhotos(photos, openaiKey) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey || !openaiKey || !photos?.length) return null;
+
+  // Fetch up to 5 photos as base64 (server-side, keeps API key out of OpenAI logs)
+  const toFetch = photos.slice(0, 5);
+  const imageMessages = [];
+  for (const photo of toFetch) {
+    try {
+      const photoUrl = `${PLACES_BASE}/${photo.name}/media?maxHeightPx=600&maxWidthPx=800&key=${apiKey}&skipHttpRedirect=false`;
+      const imgRes = await fetch(photoUrl, { signal: AbortSignal.timeout(10000) });
+      if (!imgRes.ok) continue;
+      const buffer = await imgRes.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mime = imgRes.headers.get('content-type') || 'image/jpeg';
+      imageMessages.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } });
+    } catch(e) { /* skip failed photo */ }
+  }
+  if (!imageMessages.length) return null;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `These are Google Maps photos for a restaurant/bar/food business. Analyze every photo and identify ALL food and drink items you can see. Then output ONLY a JSON array like this (no extra text):
+[
+  {"item": "Smash Burger", "photos": 3, "notes": "appears as featured item, plated prominently"},
+  {"item": "Old Fashioned cocktail", "photos": 2, "notes": "customer photo, bar setting"},
+  {"item": "Brussels sprouts appetizer", "photos": 1, "notes": "table shot"}
+]
+If a photo shows the interior, exterior, or people only (no food/drinks), skip it. Focus on what's being photographed most — these are demand signals.`
+          },
+          ...imageMessages,
+        ],
+      }],
+    }),
+  });
+  const data = await res.json();
+  const raw = data.choices?.[0]?.message?.content || '';
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+  } catch(e) { return null; }
+}
+
+// ── Extract structured menu items from website + review text ──────────────────
+async function extractMenuItems(menuText, homeText, reviewText, businessName, openaiKey) {
+  if (!openaiKey) return null;
+  const menuSource = menuText || homeText || '';
+  if (!menuSource && !reviewText) return null;
+
+  const prompt = `Extract every menu item you can identify from the content below for "${businessName}".
+Output ONLY a JSON array (no extra text):
+[
+  {"name": "Wagyu Smash Burger", "price": "$18", "description": "double smash patty, american cheese, house sauce", "source": "menu"},
+  {"name": "Nashville Hot Chicken Sandwich", "price": "$16", "description": "crispy chicken, spicy glaze, pickle slaw", "source": "menu"},
+  {"name": "Truffle Fries", "price": null, "description": "mentioned in reviews as a favorite", "source": "review"}
+]
+Rules:
+- "source" is "menu" if from the website/menu text, "review" if only mentioned in reviews
+- Include price if visible, null if not
+- Include description if available, null if not
+- Do NOT invent items — only include what you can actually see in the text below
+- If no items found, return []
+
+WEBSITE/MENU TEXT:
+${menuSource.substring(0, 4000)}
+
+REVIEW MENTIONS:
+${(reviewText || '').substring(0, 1500)}`;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 1200,
+      messages: [
+        { role: 'system', content: 'You are a menu extraction assistant. Output only valid JSON arrays. Never add commentary outside the JSON.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  const data = await res.json();
+  const raw = data.choices?.[0]?.message?.content || '';
+  try {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    return jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+  } catch(e) { return []; }
+}
+
 // ── Search stored community intel for business mentions ───────────────────────
 async function getCommunityMentions(pool, businessName) {
   const pattern = `%${businessName.replace(/'/g, "''").substring(0, 50)}%`;
@@ -206,23 +305,48 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       communityMentions = await getCommunityMentions(pool, businessName);
     } catch (e) { /* non-fatal */ }
 
-    // ── 5. Store raw data ───────────────────────────────────────────────────
+    // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const reviewText = (place.reviews || []).map(r => r.text?.text || '').join('\n\n');
+    let photoSubjects = null;
+    let menuItems = null;
+    try {
+      [photoSubjects, menuItems] = await Promise.all([
+        analyzePhotos(place.photos || [], openaiKey),
+        extractMenuItems(
+          websiteData?.menuText || null,
+          websiteData?.homeText || null,
+          reviewText,
+          businessName,
+          openaiKey
+        ),
+      ]);
+      console.log(`[intel] Photos analyzed: ${photoSubjects?.length || 0} items | Menu items extracted: ${menuItems?.length || 0}`);
+    } catch(e) {
+      console.warn(`[intel] Photo/menu extraction failed: ${e.message}`);
+    }
+
+    // ── 6. Store raw data ───────────────────────────────────────────────────
     await pool.query(`
       UPDATE business_intel SET
         place_id=$1, place_data=$2, competitors=$3,
-        website_data=$4, community_mentions=$5, status='synthesizing'
-      WHERE client_id=$6
+        website_data=$4, community_mentions=$5,
+        ai_photo_subjects=$6, ai_menu_items=$7,
+        status='synthesizing'
+      WHERE client_id=$8
     `, [
       place.id,
       JSON.stringify(place),
       JSON.stringify(competitors),
       JSON.stringify(websiteData),
       JSON.stringify(communityMentions),
+      photoSubjects ? JSON.stringify(photoSubjects) : null,
+      menuItems ? JSON.stringify(menuItems) : null,
       clientId,
     ]);
 
-    // ── 6. AI synthesis ─────────────────────────────────────────────────────
-    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName);
+    // ── 7. AI synthesis ─────────────────────────────────────────────────────
+    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems);
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -232,7 +356,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
 }
 
 // ── AI Synthesis ──────────────────────────────────────────────────────────────
-async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName) {
+async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     await pool.query(`UPDATE business_intel SET status='error', error_message=$1 WHERE client_id=$2`,
@@ -273,6 +397,16 @@ async function synthesizeIntel(pool, clientId, place, competitors, websiteData, 
     ? `WEBSITE CONTENT:\n${websiteData.homeText.substring(0, 2000)}`
     : 'No website accessible.';
 
+  const photoContext = photoSubjects?.length
+    ? `PHOTO ANALYSIS (what customers are actually photographing):\n` +
+      photoSubjects.map(p => `- "${p.item}" appears in ${p.photos} photo(s)${p.notes ? ` — ${p.notes}` : ''}`).join('\n')
+    : 'Photo analysis: not available or no food items identified in photos.';
+
+  const menuItemsContext = menuItems?.length
+    ? `EXTRACTED MENU ITEMS (${menuItems.length} items from website/reviews):\n` +
+      menuItems.map(m => `- ${m.name}${m.price ? ` (${m.price})` : ''}${m.description ? `: ${m.description}` : ''} [source: ${m.source}]`).join('\n')
+    : 'Menu extraction: no structured items found.';
+
   const businessContext = `
 BUSINESS: ${place.displayName?.text || businessName}
 ADDRESS: ${place.formattedAddress || 'Unknown'}
@@ -297,6 +431,10 @@ ${reviewText || 'No reviews returned by API.'}
 
 ${menuContext}
 
+${menuItemsContext}
+
+${photoContext}
+
 COMMUNITY MENTIONS (Reddit/News):
 ${communityText}
 
@@ -315,7 +453,10 @@ The 2-3 things this business genuinely does well based on review evidence.
 The 2-3 most consistent problems or complaints. Be honest and direct.
 
 **MENU/OFFERING INTELLIGENCE**
-What we know about their menu from reviews, website, and Google data. What items are mentioned positively? What's criticized? Any gaps apparent?
+Cross-reference what's on their menu (from website), what customers mention in reviews, and what appears most in customer photos. Flag any item that is frequently photographed but not prominently featured/marketed. Flag items praised in reviews that aren't clearly on the menu. Flag items on the menu that get no photo or review attention.
+
+**PHOTO DEMAND SIGNALS**
+Based on the photo analysis, what are customers most drawn to photographing? What does this tell us about what's resonating vs. what isn't being captured? Are there items that should be featured more prominently in their marketing?
 
 **OPERATIONAL FLAGS**
 Any patterns in reviews suggesting operational issues (consistency, wait times, staff, management)?`,

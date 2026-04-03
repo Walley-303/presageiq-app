@@ -135,11 +135,15 @@ async function initDb() {
       community_mentions JSONB,
       ai_profile         TEXT,
       ai_competitors     TEXT,
+      ai_menu_items      TEXT,
+      ai_photo_subjects  TEXT,
       status             TEXT DEFAULT 'pending',
       error_message      TEXT,
       gathered_at        TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_menu_items TEXT`);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_photo_subjects TEXT`);
 
   // ── Collection job log ────────────────────────────────────────────────────
   await pool.query(`
@@ -384,7 +388,7 @@ app.get('/api/intel/business/:clientId', async (req, res) => {
     if (!result.rows.length) return res.json({ status: 'not_started' });
     const row = result.rows[0];
     // Parse JSONB fields
-    ['place_data', 'competitors', 'website_data', 'community_mentions'].forEach(f => {
+    ['place_data', 'competitors', 'website_data', 'community_mentions', 'ai_menu_items', 'ai_photo_subjects'].forEach(f => {
       if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
     });
     res.json(row);
