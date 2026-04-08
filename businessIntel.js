@@ -131,8 +131,8 @@ async function analyzePhotos(photos, openaiKey) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey || !openaiKey || !photos?.length) return null;
 
-  // Fetch up to 5 photos as base64 (server-side, keeps API key out of OpenAI logs)
-  const toFetch = photos.slice(0, 5);
+  // Fetch all available photos (Places API returns up to 10) — more photos = better demand signals
+  const toFetch = photos.slice(0, 10);
   const imageMessages = [];
   for (const photo of toFetch) {
     try {
@@ -152,7 +152,7 @@ async function analyzePhotos(photos, openaiKey) {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 600,
+      max_tokens: 900,
       messages: [{
         role: 'user',
         content: [

@@ -1447,7 +1447,8 @@ async function checkIntelStatus(target) {
       const place = data.place_data || {};
       const competitors = data.competitors || [];
       const gathered = data.gathered_at ? new Date(data.gathered_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-      const statusTag = `<span style="color:var(--teal);">◎ Gathered ${gathered}</span>`;
+      const reGatherBtn = `<button onclick="reGatherIntel()" style="font-size:9px;background:none;border:1px solid var(--border2);border-radius:3px;color:var(--text3);padding:2px 7px;cursor:pointer;margin-left:8px;">↻ Re-gather</button>`;
+      const statusTag = `<span style="color:var(--teal);">◎ Gathered ${gathered}</span>${reGatherBtn}`;
       if (reviewStatusEl) reviewStatusEl.innerHTML = statusTag;
       if (compStatusEl) compStatusEl.innerHTML = statusTag;
 
@@ -1505,7 +1506,9 @@ function populateBizProfileCard(place) {
 
   const types = (place.types || []).filter(t => !['point_of_interest','establishment','food','locality','political'].includes(t));
   setText('bip-type', types.slice(0,2).map(t => t.replace(/_/g,' ')).join(', ') || null);
-  setText('bip-photos', (place.photos || []).length ? `${(place.photos||[]).length} on Maps` : '0');
+  const photoCount = (place.photos || []).length;
+  const photoLabel = photoCount >= 10 ? `${photoCount} analyzed (API max)` : photoCount ? `${photoCount} on Maps` : '0';
+  setText('bip-photos', photoLabel);
 
   const attrsEl = document.getElementById('bip-attrs');
   if (attrsEl) {
@@ -1547,52 +1550,75 @@ async function autoPopulateMenu() {
     return;
   }
   btn.disabled = true;
-  if (statusEl) statusEl.innerHTML = 'Loading menu data from intel...';
+  if (statusEl) statusEl.innerHTML = 'Loading menu data from intel &amp; uploads...';
 
   try {
-    const resp = await fetch(`/api/intel/business/${currentClientId}`);
-    const intel = await resp.json();
+    // Load intel + saved menu uploads in parallel
+    const [intelResp, uploadsResp] = await Promise.all([
+      fetch(`/api/intel/business/${currentClientId}`),
+      fetch(`/api/intel/menu-uploads/${currentClientId}`)
+    ]);
+    const intel = await intelResp.json();
+    const uploads = uploadsResp.ok ? await uploadsResp.json() : [];
 
-    if (intel?.status !== 'complete') {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn);">Intel not ready yet — wait for gathering to complete first.</span>';
+    const photoSubjects = intel?.ai_photo_subjects || [];
+    const websiteItems = (intel?.status === 'complete') ? (intel.ai_menu_items || []) : [];
+
+    // Build a flat list of items from uploaded menus (our primary source)
+    const uploadedItems = [];
+    for (const u of (uploads || [])) {
+      for (const item of (u.extracted_items || [])) {
+        const name = typeof item === 'string' ? item : (item.name || '');
+        const price = (typeof item === 'object' && item.price) ? item.price : '';
+        if (name && !uploadedItems.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+          uploadedItems.push({ name, price, source: u.label || 'Menu' });
+        }
+      }
+    }
+
+    // Merge: uploaded menu items take priority, then website-scraped items as supplement
+    const allItems = [...uploadedItems];
+    for (const wi of websiteItems) {
+      if (!wi.name) continue;
+      if (!allItems.some(e => e.name.toLowerCase() === wi.name.toLowerCase())) {
+        allItems.push({ name: wi.name, price: wi.price || '', source: 'website' });
+      }
+    }
+
+    if (!allItems.length && !photoSubjects.length) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text3);">No items found. Upload menu photos below — use "Extract &amp; Save" to pull items from your menu photos, then click Auto-populate again.</span>';
       btn.disabled = false; return;
     }
 
-    const items = intel.ai_menu_items || [];
-    const photoSubjects = intel.ai_photo_subjects || [];
-
-    if (!items.length && !photoSubjects.length) {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text3);">No menu items found — business may not have a public website or menu page.</span>';
-      btn.disabled = false; return;
-    }
-
-    // Render photo demand signals in biz card
+    // Render photo demand signals
     if (photoSubjects.length) renderPhotoSubjects(photoSubjects);
 
-    // Cross-reference: mark items that also appear in photos
-    const photoItemNames = (photoSubjects || []).map(p => p.item.toLowerCase());
-
+    const photoItemNames = photoSubjects.map(p => p.item.toLowerCase());
     let added = 0;
-    for (const item of items) {
-      if (!item.name) continue;
+
+    for (const item of allItems) {
       const inPhotos = photoItemNames.some(p => p.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(p));
-      // Use mentions field to flag photo appearances
-      const mentions = inPhotos ? 'praised' : '';
-      addMenuItem(item.name, item.price || '', '', mentions);
+      addMenuItem(item.name, item.price || '', '', inPhotos ? 'praised' : '');
       added++;
     }
 
-    // Also add photo items that aren't in the menu extract
+    // Add photo-only items (appear in 2+ photos, not on any menu)
     for (const photo of photoSubjects) {
-      const alreadyAdded = items.some(m => m.name?.toLowerCase() === photo.item.toLowerCase());
+      const alreadyAdded = allItems.some(m => m.name.toLowerCase() === photo.item.toLowerCase());
       if (!alreadyAdded && photo.photos >= 2) {
-        // Appears in 2+ photos but not on extracted menu — flag as gap
         addMenuItem(photo.item, '', '', 'praised');
         added++;
       }
     }
 
-    if (statusEl) statusEl.innerHTML = `<span style="color:var(--teal);">◎ Auto-populated ${added} items from website${photoSubjects.length ? ' + ' + photoSubjects.length + ' photo demand signals' : ''}. Review and adjust below, then run analysis.</span>`;
+    const sources = [];
+    if (uploadedItems.length) sources.push(`${uploadedItems.length} from uploaded menus`);
+    if (websiteItems.length && uploadedItems.length < allItems.length) sources.push(`${websiteItems.length - (allItems.length - uploadedItems.length - (allItems.length - websiteItems.length - uploadedItems.length))} from website`);
+    if (photoSubjects.length) sources.push(`${photoSubjects.length} photo demand signals`);
+    const sourceNote = sources.length ? ` (${sources.join(' · ')})` : '';
+
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--teal);">◎ Populated ${added} items${sourceNote}. Review list above, fill in any missing prices, then run Menu Analysis.</span>`;
+    await renderMenuComparison();
   } catch(e) {
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger);">Failed: ${escHtml(e.message)}</span>`;
   }
@@ -1635,6 +1661,7 @@ async function uploadMenuPhoto() {
   btn.disabled = true;
   const label = labelEl.value || 'Menu';
   let successCount = 0;
+  let allExtractedItems = [];
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -1660,6 +1687,7 @@ async function uploadMenuPhoto() {
       const result = await resp.json();
       if (result.success) {
         successCount++;
+        if (result.items?.length) allExtractedItems.push(...result.items);
       } else {
         console.warn('Upload failed for', file.name, result.error);
       }
@@ -1668,21 +1696,28 @@ async function uploadMenuPhoto() {
     }
   }
 
-  if (statusEl) {
-    if (successCount > 0) {
-      statusEl.innerHTML = `<span style="color:var(--teal);">◎ Uploaded &amp; extracted items from ${successCount} photo${successCount > 1 ? 's' : ''}.</span>`;
-    } else {
-      statusEl.innerHTML = `<span style="color:var(--danger);">Upload failed — check connection and try again.</span>`;
-    }
-  }
-
   fileInput.value = '';
   document.getElementById('menu-upload-preview').innerHTML = '';
   btn.disabled = false;
 
   if (successCount > 0) {
+    // Populate the Menu Items list from extracted items
+    let added = 0;
+    for (const item of allExtractedItems) {
+      const name = typeof item === 'string' ? item : (item.name || '');
+      if (!name) continue;
+      const price = (typeof item === 'object' && item.price) ? item.price : '';
+      addMenuItem(name, price, '', '');
+      added++;
+    }
+
+    const itemNote = added > 0 ? ` · ${added} item${added !== 1 ? 's' : ''} added to Menu Items list` : '';
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--teal);">◎ Uploaded &amp; extracted ${allExtractedItems.length} items from ${successCount} photo${successCount > 1 ? 's' : ''}${itemNote}. Scroll up to review, then run Menu Analysis.</span>`;
+
     await loadMenuUploads();
     await renderMenuComparison();
+  } else {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger);">Upload failed — check connection and try again.</span>`;
   }
 }
 
@@ -2279,6 +2314,22 @@ function loadClientIntoSession(id, mode) {
   // Show confirmation
   const pill = document.querySelector('.client-pill');
   if (pill) pill.textContent = cl.name + ' · ' + (cl.service === 'consult' ? 'Consult' : 'Audit');
+}
+
+// Force re-gather — useful when intel exists but is missing photo subjects (old records pre-dating photo analysis)
+async function reGatherIntel() {
+  if (!currentClientId) return;
+  setIntelStatusBanners('gathering');
+  ['review-intel-status','comp-intel-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<span style="color:var(--warn);">↻ Re-gathering — this takes ~30 seconds...</span>';
+  });
+  try {
+    await fetch(`/api/intel/business/${currentClientId}`, { method: 'POST' });
+    startIntelPoll(currentClientId);
+  } catch(e) {
+    console.warn('[intel] Re-gather failed:', e.message);
+  }
 }
 
 // Auto-trigger intel on client load — checks if already gathered, triggers if not, polls silently
