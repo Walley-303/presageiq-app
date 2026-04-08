@@ -53,7 +53,8 @@ section{padding:96px 48px;}
 .sd{font-size:13px;color:var(--text2);line-height:1.8;}
 /* TIERS */
 .tiers-wrap{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
-.tiers-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:940px;margin:48px auto 0;}
+.tiers-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:980px;margin:48px auto 0;}
+@media(max-width:900px){.tiers-grid{grid-template-columns:1fr;}}
 .tc{background:var(--bg);border:1px solid var(--border2);border-radius:8px;overflow:hidden;position:relative;transition:transform .25s;}
 .tc:hover{transform:translateY(-3px);}
 .tc.feat{border-color:rgba(200,150,62,.35);}
@@ -111,17 +112,19 @@ section{padding:96px 48px;}
 .ps-title{font-family:var(--font-display);font-size:12px;font-weight:700;margin-bottom:5px;}
 .ps-desc{font-size:10px;color:var(--text2);line-height:1.6;}
 /* COMPARE */
-.comp-table{max-width:800px;margin:44px auto 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
-.comp-head{display:grid;grid-template-columns:2fr 1fr 1fr;background:var(--bg3);border-bottom:1px solid var(--border);}
-.ch{padding:14px 18px;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);}
+.comp-table{max-width:960px;margin:44px auto 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.comp-head{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;background:var(--bg3);border-bottom:1px solid var(--border);}
+.ch{padding:14px 12px;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);}
 .ch.gold{color:var(--gold);}
-.cr{display:grid;grid-template-columns:2fr 1fr 1fr;border-bottom:1px solid var(--border);}
+.cr{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;border-bottom:1px solid var(--border);}
 .cr:last-child{border-bottom:none;}
 .cr:hover{background:var(--bg3);}
-.cc{padding:12px 18px;font-size:12px;color:var(--text2);display:flex;align-items:center;}
+.cc{padding:11px 12px;font-size:11px;color:var(--text2);display:flex;align-items:center;}
 .cc.feat{color:var(--text);}
 .chk{color:var(--teal2);}
 .dsh{color:var(--text3);}
+@media(max-width:768px){.comp-head,.cr{grid-template-columns:2fr 1fr 1fr;}
+.comp-head .ch:nth-child(4),.comp-head .ch:nth-child(5),.cr .cc:nth-child(4),.cr .cc:nth-child(5){display:none;}}
 /* FORM */
 .form-wrap{background:var(--bg2);border-top:1px solid var(--border);}
 .finner{max-width:700px;margin:0 auto;}
@@ -187,48 +190,85 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
 
 <!-- TIERS -->
 <section class="tiers-wrap" id="services">
-  <div style="text-align:center;max-width:580px;margin:0 auto;">
+  <div style="text-align:center;max-width:620px;margin:0 auto;">
     <div class="stag center">Services</div>
-    <h2 class="sh">Two tiers. One intelligence platform.</h2>
-    <p class="sd">Starting a business or running one — PresageIQ gives you the market intelligence to make the right move.</p>
+    <h2 class="sh">Four tiers. One intelligence platform.</h2>
+    <p class="sd">Whether you're testing a concept, running an existing business, or need ongoing intelligence — PresageIQ has a tier built for your stage.</p>
   </div>
   <div class="tiers-grid">
     <div class="tc">
       <div class="tc-head">
         <div class="tc-label">Tier 1</div>
-        <div class="tc-name">Presage Consult</div>
-        <div class="tc-tag">For entrepreneurs testing a concept before they invest. One session, structured analysis, clear verdict.</div>
+        <div class="tc-name">Presage Launch</div>
+        <div class="tc-tag">For entrepreneurs testing a concept before they invest. One session, structured analysis, clear go/no-go verdict.</div>
         <div class="tc-price"><div class="tc-price-num">$500</div><div class="tc-price-sub">per session</div></div>
       </div>
       <div class="tc-body">
         <div class="tc-ilab">What's Included</div>
         <div class="ti">60-minute live intelligence session</div>
-        <div class="ti">Concept fit analysis — demand, saturation, viability</div>
-        <div class="ti">Live community signal extraction from Reddit &amp; reviews</div>
-        <div class="ti">Competitive landscape overview</div>
-        <div class="ti">Presage Brief — written PDF summary within 24hrs</div>
-        <div class="ti">Neighborhood analysis printout</div>
-        <a href="#contact" class="tcta tcta-out" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Consult — $500'},100)">Book Presage Consult →</a>
+        <div class="ti">Concept fit analysis — demand, saturation, viability score</div>
+        <div class="ti">Neighborhood market analysis &amp; opportunity gaps</div>
+        <div class="ti">Community signal extraction from Reddit &amp; local sources</div>
+        <div class="ti">Financial projection framework &amp; startup cost range</div>
+        <div class="ti">Funding pathways — KC-specific grants, loans, SBA</div>
+        <div class="ti">Presage Launch Brief — written summary within 24hrs</div>
+        <a href="#contact" class="tcta tcta-out" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Launch — $500'},100)">Book Presage Launch →</a>
+      </div>
+    </div>
+    <div class="tc">
+      <div class="tc-head">
+        <div class="tc-label">Tier 2</div>
+        <div class="tc-name">Presage Consult</div>
+        <div class="tc-tag">For existing businesses wanting focused market intelligence — reviews, competitors, and local press coverage in one brief.</div>
+        <div class="tc-price"><div class="tc-price-num">$1,200</div><div class="tc-price-sub">per engagement</div></div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-ilab">What's Included</div>
+        <div class="ti">Full business profile from Google Maps — rating, reviews, photos</div>
+        <div class="ti">Review sentiment extraction — what customers love and complain about</div>
+        <div class="ti">Competitor gap analysis — who's winning nearby and why</div>
+        <div class="ti">KC press coverage review — KC Magazine, The Pitch, KCUR mentions</div>
+        <div class="ti">Photo demand signals — what customers actually photograph</div>
+        <div class="ti">Presage Consult Brief — written report within 48hrs</div>
+        <a href="#contact" class="tcta tcta-out" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Consult — $1,200'},100)">Book Presage Consult →</a>
       </div>
     </div>
     <div class="tc feat">
       <div class="tc-badge">Most Comprehensive</div>
       <div class="tc-head">
-        <div class="tc-label">Tier 2</div>
+        <div class="tc-label">Tier 3</div>
         <div class="tc-name">Presage Audit</div>
-        <div class="tc-tag">For existing businesses ready to optimize. Deep analysis of your operations, market position, menu, inventory, and competitors.</div>
+        <div class="tc-tag">Full deep-dive for existing businesses. Everything in Consult plus menu performance, inventory, and supply chain analysis.</div>
         <div class="tc-price"><div class="tc-price-num">$2,500</div><div class="tc-price-sub">per engagement</div></div>
       </div>
       <div class="tc-body">
         <div class="tc-ilab">What's Included</div>
-        <div class="ti hl">Menu &amp; product performance analysis</div>
-        <div class="ti hl">Inventory &amp; supply chain review</div>
-        <div class="ti hl">Competitor gap analysis — what they win on, where you can compete</div>
-        <div class="ti hl">Review sentiment extraction across all online sources</div>
-        <div class="ti hl">Strategic recommendations — highlight, fix, remove, or launch</div>
-        <div class="ti">Presage Brief Extended — full written audit report</div>
+        <div class="ti hl">Everything in Presage Consult</div>
+        <div class="ti hl">Menu &amp; product performance — item-level scoring from reviews + photos</div>
+        <div class="ti hl">Menu photo upload → vision AI extracts items for gap analysis</div>
+        <div class="ti hl">Inventory &amp; supply chain review — vendors, costs, local sourcing</div>
+        <div class="ti hl">Strategic recommendations — fix, launch, cut, or reposition</div>
+        <div class="ti">Presage Audit Brief — full written report within 48hrs</div>
         <div class="ti">Multiple sessions: intake + full session + 30-day follow-up</div>
         <a href="#contact" class="tcta tcta-gold" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Audit — $2,500'},100)">Book Presage Audit →</a>
+      </div>
+    </div>
+    <div class="tc">
+      <div class="tc-head">
+        <div class="tc-label">Tier 4</div>
+        <div class="tc-name">Presage Retainer</div>
+        <div class="tc-tag">Ongoing monthly intelligence for businesses that need to stay ahead — continuous monitoring, trend tracking, monthly brief.</div>
+        <div class="tc-price"><div class="tc-price-num">$600</div><div class="tc-price-sub">per month</div></div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-ilab">What's Included</div>
+        <div class="ti">Monthly signals — Reddit, news, Foursquare, KC community data</div>
+        <div class="ti">Trend analysis — what's shifting in your neighborhood and category</div>
+        <div class="ti">Competitive monitoring — new openings, closures, rating changes</div>
+        <div class="ti">Seasonal &amp; event opportunity identification</div>
+        <div class="ti">Monthly Presage Brief — delivered first week of each month</div>
+        <div class="ti">Priority access for ad-hoc questions between briefs</div>
+        <a href="#contact" class="tcta tcta-out" onclick="setTimeout(()=>{document.getElementById('f-service').value='Presage Retainer — $600/mo'},100)">Book Presage Retainer →</a>
       </div>
     </div>
   </div>
@@ -295,17 +335,28 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
   <div class="stag center">Compare</div>
   <h2 class="sh" style="text-align:center;">Which tier is right for you?</h2>
   <div class="comp-table">
-    <div class="comp-head"><div class="ch">Feature</div><div class="ch">Consult · $500</div><div class="ch gold">Audit · $2,500</div></div>
-    <div class="cr"><div class="cc feat">Best for</div><div class="cc">Pre-launch entrepreneurs</div><div class="cc">Existing businesses</div></div>
-    <div class="cr"><div class="cc feat">Neighborhood market analysis</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Concept fit scoring</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Community signal extraction</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Presage Brief (PDF)</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓ Extended</span></div></div>
-    <div class="cr"><div class="cc feat">Menu &amp; product analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Inventory &amp; supply chain review</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Competitor gap analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">30-day follow-up call</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
-    <div class="cr"><div class="cc feat">Sessions included</div><div class="cc">1 × 60 min</div><div class="cc">Intake + Full + Follow-up</div></div>
+    <div class="comp-head">
+      <div class="ch">Feature</div>
+      <div class="ch">Launch · $500</div>
+      <div class="ch">Consult · $1,200</div>
+      <div class="ch gold">Audit · $2,500</div>
+      <div class="ch">Retainer · $600/mo</div>
+    </div>
+    <div class="cr"><div class="cc feat">Best for</div><div class="cc">Pre-launch concepts</div><div class="cc">Existing businesses</div><div class="cc">Full optimization</div><div class="cc">Ongoing monitoring</div></div>
+    <div class="cr"><div class="cc feat">Neighborhood market analysis</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Concept fit &amp; viability scoring</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Financial projection framework</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Funding pathways (KC)</div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Business profile (Google Maps)</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Review sentiment analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Competitor gap analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">KC press coverage (Pitch, KCUR, KC Mag)</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Menu &amp; product analysis</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Menu photo upload &amp; vision AI</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Inventory &amp; supply chain review</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div><div class="cc"><span class="dsh">—</span></div></div>
+    <div class="cr"><div class="cc feat">Monthly signals &amp; trend tracking</div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="dsh">—</span></div><div class="cc"><span class="chk">✓</span></div></div>
+    <div class="cr"><div class="cc feat">Presage Brief delivered</div><div class="cc">Within 24hrs</div><div class="cc">Within 48hrs</div><div class="cc"><span class="chk">Extended · 48hrs</span></div><div class="cc">Monthly</div></div>
+    <div class="cr"><div class="cc feat">Sessions / engagement</div><div class="cc">1 × 60 min</div><div class="cc">1–2 sessions</div><div class="cc">Intake + Full + 30-day</div><div class="cc">Ongoing</div></div>
   </div>
 </section>
 
@@ -324,8 +375,10 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
         <div class="ff"><label class="fl">Service</label>
           <select class="fs" id="f-service">
             <option value="">— Select a service —</option>
-            <option value="Presage Consult — $500">Presage Consult — $500</option>
-            <option value="Presage Audit — $2,500">Presage Audit — $2,500</option>
+            <option value="Presage Launch — $500">Presage Launch — $500 (pre-launch concept)</option>
+            <option value="Presage Consult — $1,200">Presage Consult — $1,200 (existing business)</option>
+            <option value="Presage Audit — $2,500">Presage Audit — $2,500 (full deep-dive)</option>
+            <option value="Presage Retainer — $600/mo">Presage Retainer — $600/mo (ongoing monitoring)</option>
             <option value="Not sure yet">Not sure yet — help me decide</option>
           </select>
         </div>
@@ -392,7 +445,7 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
 
 <footer>
   <div><div class="flogo">Presage<span>IQ</span></div><div style="font-size:9px;color:var(--text3);margin-top:3px;letter-spacing:.5px;">Towns &amp; Walley Intelligence · Kansas City</div></div>
-  <a href="https://walley-303.github.io/presageiq/" class="flink" target="_blank">PresageIQ Platform →</a>
+  <div style="font-size:9px;color:var(--text3);letter-spacing:.5px;">presageiq.com</div>
   <div style="font-size:10px;color:var(--text3);">© 2025 Towns &amp; Walley Intelligence</div>
 </footer>
 

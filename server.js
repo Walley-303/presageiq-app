@@ -14,7 +14,13 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ── Page routes ───────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'presage-consult.html')));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/consult', (req, res) => res.sendFile(path.join(__dirname, 'public', 'consult.html')));
+app.get('/marketiq', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Legacy redirects
+app.get('/dashboard', (req, res) => res.redirect(301, '/marketiq'));
+app.get('/presage-audit.html', (req, res) => res.redirect(301, '/consult'));
+app.get('/presage-consult.html', (req, res) => res.redirect(301, '/'));
+app.get('/presage-consult', (req, res) => res.redirect(301, '/'));
 
 // ── PostgreSQL ────────────────────────────────────────────────────────────────
 const pool = new Pool({
