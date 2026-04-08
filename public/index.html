@@ -465,6 +465,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   </div>
   <div class="topbar-right">
     <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMapView()">◎ Map View</button>
+    <a href="/presage-audit.html" style="font-size:10px;color:var(--text3);border:1px solid var(--border);padding:5px 12px;border-radius:4px;text-decoration:none;letter-spacing:1px;text-transform:uppercase;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">Audit Tool</a>
+    <a href="/presage-consult.html" style="font-size:10px;color:var(--text3);border:1px solid var(--border);padding:5px 12px;border-radius:4px;text-decoration:none;letter-spacing:1px;text-transform:uppercase;transition:all .2s;" onmouseover="this.style.borderColor='var(--purple)';this.style.color='var(--purple)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">Consult Tool</a>
+    <div id="live-data-badge" style="display:none;font-size:9px;color:var(--success);border:1px solid rgba(63,185,80,.3);padding:3px 8px;border-radius:3px;letter-spacing:.5px;">◎ LIVE DATA</div>
     <div class="api-status" onclick="showApiModal()" id="api-status-btn" title="AI runs via secure proxy. Click to add backup key.">
       <div class="api-dot-active" id="api-dot"></div>
       <span id="api-status-label">AI Active · Proxy</span>
@@ -1405,8 +1408,14 @@ function selectNeighborhood(id){
     </div>
   `;
 
-  // Locals panel starts empty — populated when user submits idea
-  renderLocalsPanel(id, []);
+  // Load DB community intel immediately — show what's already collected
+  loadCommunityIntel(n.name).then(records => {
+    if (records.length > 0) {
+      renderLocalsFromDB(id, records);
+    } else {
+      renderLocalsPanel(id, []); // fallback to empty state
+    }
+  });
 }
 
 // =============================================
@@ -1437,6 +1446,13 @@ async function sendChat(id){
   messages.appendChild(typing);
   messages.scrollTop = messages.scrollHeight;
 
+  const censusExtra = n.census ? `
+Poverty Rate: ${n.census.pct_poverty ? Math.round(n.census.pct_poverty) + '%' : 'N/A'}
+College Educated: ${n.census.pct_college ? Math.round(n.census.pct_college) + '%' : 'N/A'}
+Demographics: ${[n.census.pct_white && `${Math.round(n.census.pct_white)}% White`, n.census.pct_black && `${Math.round(n.census.pct_black)}% Black`, n.census.pct_hispanic && `${Math.round(n.census.pct_hispanic)}% Hispanic`].filter(Boolean).join(', ') || 'N/A'}
+Owner Occupied: ${n.census.owner_occupied ? Math.round(n.census.owner_occupied) + '%' : 'N/A'} | Renter: ${n.census.renter_occupied ? Math.round(n.census.renter_occupied) + '%' : 'N/A'}
+Known Business Count: ${n.census.business_count || 'N/A'}` : '';
+
   const systemPrompt = `You are PresageIQ, an AI market intelligence analyst specializing in Kansas City neighborhood analysis. You have deep knowledge of the following neighborhood data:
 
 Neighborhood: ${n.name}
@@ -1447,7 +1463,7 @@ Median Income: ${n.income}
 Median Age: ${n.age}
 Review Signal Volume: ${n.signal}
 Summary: ${n.summary}
-Tags: ${n.tags.join(', ')}
+Tags: ${n.tags.join(', ')}${censusExtra}
 
 Opportunity Gaps:
 ${n.gaps.map(g=>`- ${g.title}: ${g.desc} (Demand: ${g.demand}%, Saturation: ${g.sat}%, Viability: ${g.via}%)`).join('\n')}
@@ -2053,6 +2069,100 @@ function switchView(view, el){
 }
 
 // =============================================
+// LIVE DATA — Census + Community Intel
+// =============================================
+
+// Overlay live Census demographics onto hardcoded neighborhood objects
+async function loadLiveDemographics() {
+  try {
+    const resp = await fetch('/api/intel/neighborhoods');
+    if (!resp.ok) return;
+    const rows = await resp.json();
+    if (!rows?.length) return;
+
+    let updated = 0;
+    for (const row of rows) {
+      const n = NEIGHBORHOODS.find(x =>
+        x.name.toLowerCase() === (row.name || '').toLowerCase() ||
+        x.id.toLowerCase() === (row.name || '').toLowerCase().replace(/\s+/g, '')
+      );
+      if (!n) continue;
+      // Update with live Census data
+      if (row.population > 0) n.pop = row.population.toLocaleString();
+      if (row.median_income > 0) n.income = '$' + Math.round(row.median_income / 1000) + 'k';
+      if (row.median_age > 0) n.age = row.median_age;
+      // Store extra Census fields for use in AI chat context
+      n.census = {
+        pct_poverty: row.pct_poverty,
+        pct_college: row.pct_college,
+        pct_white: row.pct_white,
+        pct_black: row.pct_black,
+        pct_hispanic: row.pct_hispanic,
+        owner_occupied: row.owner_occupied,
+        renter_occupied: row.renter_occupied,
+        business_count: row.business_count,
+      };
+      updated++;
+    }
+
+    if (updated > 0) {
+      console.log(`[live] Updated ${updated} neighborhoods with Census data`);
+      const badge = document.getElementById('live-data-badge');
+      if (badge) badge.style.display = 'block';
+      // Re-render sidebar so live population/income shows in cards
+      renderSidebar();
+    }
+  } catch(e) {
+    console.warn('[live] Demographics load failed:', e.message);
+  }
+}
+
+// Load community intel from DB for the selected neighborhood
+async function loadCommunityIntel(neighborhoodName) {
+  try {
+    const resp = await fetch(`/api/intel/community?neighborhood=${encodeURIComponent(neighborhoodName)}&limit=20`);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return data.records || [];
+  } catch(e) { return []; }
+}
+
+// Render the Locals panel from DB community intel
+function renderLocalsFromDB(id, records) {
+  const panel = document.getElementById(`locals-panel-${id}`);
+  if (!panel) return;
+  const n = NEIGHBORHOODS.find(x => x.id === id);
+  const nbhdName = n ? n.name : '';
+
+  if (!records?.length) {
+    panel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;padding:4px 0;">No community signals collected yet for ${nbhdName}. Background collectors run nightly — check back tomorrow, or test a business idea above to pull live Reddit signals.</div>`;
+    return;
+  }
+
+  const SENTIMENT_COLOR = { positive: 'var(--accent)', negative: 'var(--danger)', neutral: 'var(--accent2)' };
+  const SOURCE_LABEL = { reddit: 'Reddit', gdelt: 'News', manual: 'Imported', kc_open_data: 'KC Data' };
+
+  const html = records.slice(0, 8).map(r => {
+    const color = SENTIMENT_COLOR[r.sentiment] || 'var(--text3)';
+    const src = SOURCE_LABEL[r.source] || r.source;
+    const snippet = (r.body || '').substring(0, 140).trim();
+    const age = r.post_date ? timeAgo(new Date(r.post_date).getTime() / 1000) : '';
+    return `<div class="local-quote" style="cursor:${r.url ? 'pointer' : 'default'}" ${r.url ? `onclick="window.open('${escapeAttr(r.url)}','_blank')"` : ''}>
+      <div class="local-quote-bar">
+        <div class="local-quote-line" style="background:${color};"></div>
+        <div class="local-quote-body">
+          <div class="local-quote-text">${escapeHtml(r.title || '')}</div>
+          ${snippet ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;font-style:italic;">${escapeHtml(snippet)}${r.body?.length > 140 ? '…' : ''}</div>` : ''}
+          <div class="local-quote-source">${src}${age ? ' · ' + age : ''} · <span style="color:${color};">${r.sentiment}</span>${r.url ? ' · ↗ open' : ''}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `<div style="font-size:9px;color:var(--text3);letter-spacing:.5px;margin-bottom:8px;">${records.length} signals from database · updates nightly</div>` + html;
+}
+
+// =============================================
 // START
 // =============================================
 function init(){
@@ -2061,6 +2171,8 @@ function init(){
   document.getElementById('api-status-label').textContent = 'API Active · Proxy';
   renderSidebar();
   populateImportSelect();
+  // Load live Census data in background — overlays onto hardcoded neighborhood objects
+  loadLiveDemographics();
 }
 
 init();

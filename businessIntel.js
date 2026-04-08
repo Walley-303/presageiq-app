@@ -126,6 +126,60 @@ async function scrapeWebsite(url) {
   }
 }
 
+// ── Scrape KC local review sources for business mentions ──────────────────────
+async function scrapeKCReviewSources(businessName) {
+  const results = [];
+  const query = encodeURIComponent(businessName);
+  const stripHtml = html => html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+    .replace(/\s+/g, ' ').trim();
+
+  const sources = [
+    { name: 'KC Magazine', url: `https://kansascitymag.com/?s=${query}` },
+    { name: 'The Pitch KC', url: `https://www.thepitchkc.com/?s=${query}` },
+    { name: 'KCUR Food', url: `https://www.kcur.org/search?query=${query}&secction=food` },
+  ];
+
+  for (const src of sources) {
+    try {
+      const res = await fetch(src.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PresageIQ-Intel/1.0)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const text = stripHtml(html);
+
+      // Look for the business name in the page text (case-insensitive)
+      const nameLower = businessName.toLowerCase();
+      const textLower = text.toLowerCase();
+      const idx = textLower.indexOf(nameLower);
+      if (idx === -1) continue;
+
+      // Pull up to 3 snippets (150 chars around each mention)
+      const snippets = [];
+      let searchFrom = 0;
+      while (snippets.length < 3) {
+        const pos = textLower.indexOf(nameLower, searchFrom);
+        if (pos === -1) break;
+        const start = Math.max(0, pos - 80);
+        const end = Math.min(text.length, pos + 160);
+        snippets.push('...' + text.substring(start, end).trim() + '...');
+        searchFrom = pos + nameLower.length;
+      }
+
+      if (snippets.length > 0) {
+        results.push({ source: src.name, url: src.url, snippets });
+      }
+    } catch (e) { /* non-fatal — skip source */ }
+  }
+
+  return results;
+}
+
 // ── Analyze Google Maps photos with GPT-4o-mini vision ───────────────────────
 async function analyzePhotos(photos, openaiKey) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
@@ -299,10 +353,15 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       websiteData = await scrapeWebsite(place.websiteUri);
     }
 
-    // ── 4. Community mentions from stored intel ─────────────────────────────
+    // ── 4. Community mentions + KC review sources (parallel) ───────────────
     let communityMentions = [];
+    let kcReviews = [];
     try {
-      communityMentions = await getCommunityMentions(pool, businessName);
+      [communityMentions, kcReviews] = await Promise.all([
+        getCommunityMentions(pool, businessName).catch(() => []),
+        scrapeKCReviewSources(businessName).catch(() => []),
+      ]);
+      if (kcReviews.length) console.log(`[intel] KC review sources: found mentions in ${kcReviews.length} source(s)`);
     } catch (e) { /* non-fatal */ }
 
     // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
@@ -346,7 +405,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
     ]);
 
     // ── 7. AI synthesis ─────────────────────────────────────────────────────
-    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems);
+    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, kcReviews);
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -356,7 +415,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
 }
 
 // ── AI Synthesis ──────────────────────────────────────────────────────────────
-async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems) {
+async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, kcReviews = []) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     await pool.query(`UPDATE business_intel SET status='error', error_message=$1 WHERE client_id=$2`,
@@ -391,6 +450,12 @@ async function synthesizeIntel(pool, clientId, place, competitors, websiteData, 
   const communityText = communityMentions.length > 0
     ? communityMentions.map(m => `[${m.source} · ${m.sentiment}] ${m.title}: ${(m.body || '').substring(0, 200)}`).join('\n\n')
     : 'No community mentions found in database yet.';
+
+  const kcReviewText = kcReviews.length > 0
+    ? kcReviews.map(r =>
+        `[${r.source}]\n` + r.snippets.join('\n')
+      ).join('\n\n')
+    : 'No mentions found in KC Magazine, The Pitch KC, or KCUR.';
   const menuContext = websiteData?.menuText
     ? `MENU PAGE:\n${websiteData.menuText.substring(0, 3000)}`
     : websiteData?.homeText
@@ -435,8 +500,11 @@ ${menuItemsContext}
 
 ${photoContext}
 
-COMMUNITY MENTIONS (Reddit/News):
+COMMUNITY MENTIONS (Reddit/News from collected database):
 ${communityText}
+
+KC LOCAL PRESS COVERAGE (KC Magazine, The Pitch KC, KCUR):
+${kcReviewText}
 
 Generate a structured business intelligence report. Use ** for section headers.
 
