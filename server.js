@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
-const { gatherBusinessIntel, extractMenuFromImage } = require('./businessIntel');
+const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources } = require('./businessIntel');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -492,6 +492,24 @@ app.get('/api/intel/menu-uploads/:clientId/image/:uploadId', async (req, res) =>
     res.set('Content-Type', mime_type);
     res.send(buf);
   } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/intel/press-live/:clientId ─ Live KC press scrape for a business ─
+app.post('/api/intel/press-live/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const client = await pool.query(`SELECT bizname, name FROM clients WHERE id=$1`, [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const { bizname, name } = client.rows[0];
+    const businessName = (bizname || name || '').trim();
+    if (!businessName) return res.status(400).json({ error: 'No business name on this client record' });
+
+    const results = await scrapeKCReviewSources(businessName);
+    res.json({ businessName, results, count: results.length });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

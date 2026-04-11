@@ -622,4 +622,4 @@ Rules:
   } catch(e) { return []; }
 }
 
-module.exports = { gatherBusinessIntel, extractMenuFromImage };
+module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources };

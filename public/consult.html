@@ -1151,6 +1151,19 @@ function addMenuItem(name='',price='',vol='',mentions='') {
   renderMenuItems();
 }
 
+// Dedup-safe wrapper: skips if same name already in list (case-insensitive, trimmed).
+// If the existing entry has no price and the incoming one does, updates price in place.
+function addMenuItemIfNew(name='',price='',vol='',mentions='') {
+  const key = name.trim().toLowerCase();
+  if (!key) return;
+  const existing = menuItems.find(m => m.name.trim().toLowerCase() === key);
+  if (existing) {
+    if (!existing.price && price) { existing.price = price; renderMenuItems(); }
+    return;
+  }
+  addMenuItem(name, price, vol, mentions);
+}
+
 function removeMenuItem(id) {
   menuItems = menuItems.filter(m => m.id !== id);
   renderMenuItems();
@@ -1420,7 +1433,7 @@ async function analyzeMenu() {
     const data = await callAI({
       model:'gpt-4o-mini', max_tokens:900,
       system:`You are PresageIQ conducting a Presage Audit for an existing KC business. Be direct, specific, and actionable. No generic advice. Reference the actual items provided.`,
-      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ITEMS:\n${itemSummary}\n\nOWNER'S VIEW OF HIGHLIGHTS: ${document.getElementById('m-highlights').value||'Not provided'}\nKNOWN WEAK SPOTS: ${document.getElementById('m-weak').value||'Not provided'}\nPASTED REVIEWS: ${document.getElementById('m-reviews').value||'None provided'}\n\nAnalyze this menu. Structure:\n**STAR ITEMS** — what's working and should be featured more prominently\n**UNDERPERFORMERS** — items to fix, relaunch, or cut (be specific: which ones and why)\n**MISSING FROM MENU** — gaps based on reviews and neighborhood context\n**MARKETING PRIORITY** — the single highest-leverage change (what to push in ads/signage)\n**LAUNCH OPPORTUNITY** — one new item concept that fits this menu and fills a documented gap`}]
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ITEMS:\n${itemSummary}\n\nOWNER'S VIEW OF HIGHLIGHTS: ${document.getElementById('m-highlights')?.value||'Not provided'}\nKNOWN WEAK SPOTS: ${document.getElementById('m-weak')?.value||'Not provided'}\nPASTED REVIEWS: ${document.getElementById('m-reviews')?.value||'None provided'}\n\nAnalyze this menu. Structure:\n**STAR ITEMS** — what's working and should be featured more prominently\n**UNDERPERFORMERS** — items to fix, relaunch, or cut (be specific: which ones and why)\n**MISSING FROM MENU** — gaps based on reviews and neighborhood context\n**MARKETING PRIORITY** — the single highest-leverage change (what to push in ads/signage)\n**LAUNCH OPPORTUNITY** — one new item concept that fits this menu and fills a documented gap`}]
     });
     body.innerHTML = renderAI(data.content?.[0]?.text||'');
     markDone('menu');
@@ -1647,37 +1660,59 @@ async function runPressAnalysis() {
   const pasted = document.getElementById('press-paste')?.value.trim()||'';
   const isRetainer = currentTier==='retainer';
 
-  // Try stored intel first
-  const params = new URLSearchParams({ limit:40 });
-  if (nbhd) params.set('neighborhood', nbhd);
-
   try {
-    const data = await fetch(`/api/intel/community?${params}`).then(r=>r.json());
-    const records = data.records||[];
+    // Step 1: Query DB + trigger live scrape in parallel
+    const params = new URLSearchParams({ limit:40 });
+    if (nbhd) params.set('neighborhood', nbhd);
 
-    const context = records.length
+    const [dbData, liveData] = await Promise.allSettled([
+      fetch(`/api/intel/community?${params}`).then(r=>r.json()),
+      currentClientId
+        ? fetch(`/api/intel/press-live/${currentClientId}`, { method:'POST' }).then(r=>r.ok?r.json():null)
+        : Promise.resolve(null)
+    ]);
+
+    if (statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Synthesizing with AI...</span>';
+
+    const records = (dbData.status==='fulfilled' ? dbData.value?.records : null) || [];
+
+    // Step 2: Build context block from DB records
+    const dbContext = records.length
       ? records.map(r=>`[${r.source.toUpperCase()} · ${r.sentiment||'neutral'}] ${r.title||''}\n${r.body?r.body.substring(0,250):''}`).join('\n\n---\n\n')
       : '';
 
-    const fullContext = [context, pasted].filter(Boolean).join('\n\n---\n\n');
+    // Step 3: Build context block from live KC press scrape results
+    const liveResults = (liveData.status==='fulfilled' && liveData.value?.results) || [];
+    const liveContext = liveResults.length
+      ? liveResults.map(r=>`[${r.source.toUpperCase()} · live]\n${r.snippets.join('\n')}`).join('\n\n---\n\n')
+      : '';
+
+    const fullContext = [dbContext, liveContext, pasted].filter(Boolean).join('\n\n---\n\n');
 
     if (!fullContext) {
-      body.innerHTML='<span style="color:var(--warn);">No stored intelligence found for this neighborhood. Run a Reddit collection from the Data Library, or paste content below and re-run.</span>';
+      body.innerHTML='<span style="color:var(--warn);">No intelligence found for this business or neighborhood. Paste content below and re-run, or ensure the client has a business name set.</span>';
       if (statusEl) statusEl.innerHTML='';
       btn.disabled=false; return;
     }
 
     const systemPrompt = isRetainer
       ? `You are PresageIQ synthesizing monthly community intelligence for a KC retainer client. Focus on what's changed, new trends, and emerging signals relevant to their business type and neighborhood.`
-      : `You are PresageIQ synthesizing KC press and community coverage for a business client. Focus on neighborhood conditions, business sentiment, and signals relevant to their industry.`;
+      : `You are PresageIQ synthesizing KC press and community coverage for a business client. Focus on neighborhood conditions, business sentiment, and any direct coverage of this business.`;
 
     const userPrompt = isRetainer
-      ? `Client: ${biz||'Retainer Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nCOMMUNITY INTELLIGENCE DATA:\n${fullContext}\n\nSynthesize for monthly retainer report:\n\n**WHAT'S NEW THIS MONTH** — notable shifts, news, or activity\n\n**TREND SIGNALS** — patterns emerging in the data\n\n**NEIGHBORHOOD PULSE** — community sentiment and conditions\n\n**RELEVANT TO THIS BUSINESS** — specifically what applies to ${biz||'this client'}\n\n**RECOMMENDED RESPONSE** — one actionable recommendation based on what you're seeing`
-      : `Business: ${biz||'Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nCOMMUNITY INTELLIGENCE DATA (${records.length} records):\n${fullContext}\n\nSynthesize press and community coverage. Structure:\n\n**NEIGHBORHOOD CONDITIONS** — what the data says about conditions in ${nbhd||'KC'} for this type of business\n\n**RELEVANT COVERAGE** — news or community mentions relevant to this business or competitive set\n\n**COMMUNITY SENTIMENT** — overall tone toward this area and business category\n\n**OPPORTUNITIES** — what the coverage signals as an opening for this business\n\n**RISKS** — any negative signals or headwinds worth flagging`;
+      ? `Client: ${biz||'Retainer Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nINTELLIGENCE DATA:\n${fullContext}\n\nSynthesize for monthly retainer report:\n\n**WHAT'S NEW THIS MONTH** — notable shifts, news, or activity\n\n**TREND SIGNALS** — patterns emerging in the data\n\n**NEIGHBORHOOD PULSE** — community sentiment and conditions\n\n**RELEVANT TO THIS BUSINESS** — specifically what applies to ${biz||'this client'}\n\n**RECOMMENDED RESPONSE** — one actionable recommendation based on what you're seeing`
+      : `Business: ${biz||'Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nINTELLIGENCE DATA (${records.length} stored records + ${liveResults.length} live KC press sources):\n${fullContext}\n\nSynthesize press and community coverage. Structure:\n\n**DIRECT COVERAGE** — any specific mentions of ${biz||'this business'} in KC media or community sources (if found)\n\n**NEIGHBORHOOD CONDITIONS** — what the data says about conditions in ${nbhd||'KC'} for this type of business\n\n**COMMUNITY SENTIMENT** — overall tone toward this area and business category\n\n**OPPORTUNITIES** — what the coverage signals as an opening for this business\n\n**RISKS** — any negative signals or headwinds worth flagging`;
 
-    const aiData = await callAI({ model:'gpt-4o-mini', max_tokens:800, system: systemPrompt, messages:[{role:'user',content:userPrompt}] });
+    const aiData = await callAI({ model:'gpt-4o-mini', max_tokens:900, system: systemPrompt, messages:[{role:'user',content:userPrompt}] });
+
+    const sourceNote = [
+      records.length ? `${records.length} stored records` : '',
+      liveResults.length ? `${liveResults.length} live KC press source${liveResults.length!==1?'s':''}` : '',
+      pasted ? 'pasted content' : ''
+    ].filter(Boolean).join(' + ');
+
     body.innerHTML = renderAI(aiData.content?.[0]?.text||'') +
-      `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from ${records.length} stored records${pasted?' + pasted content':''}</div>`;
+      `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from: ${sourceNote||'pasted content'}</div>`;
     if (statusEl) statusEl.innerHTML='<span style="color:var(--teal);">◎ Analysis complete</span>';
     markDone('press');
   } catch(e) {
@@ -1909,7 +1944,9 @@ async function uploadMenuPhoto() {
     for (const item of allExtractedItems) {
       const name=typeof item==='string'?item:(item.name||''); if(!name) continue;
       const price=(typeof item==='object'&&item.price)?item.price:'';
-      addMenuItem(name,price,'',''); added++;
+      const before=menuItems.length;
+      addMenuItemIfNew(name,price,'','');
+      if(menuItems.length>before) added++;
     }
     const itemNote=added>0?` · ${added} item${added!==1?'s':''} added to Menu Items list`:'';
     if(statusEl) statusEl.innerHTML=`<span style="color:var(--teal);">◎ Uploaded &amp; extracted ${allExtractedItems.length} items from ${successCount} photo${successCount>1?'s':''}${itemNote}. Scroll up to review, then run Menu Analysis.</span>`;
@@ -1950,11 +1987,17 @@ async function autoPopulateMenu() {
     let added=0;
     for (const item of allItems) {
       const inPhotos=photoItemNames.some(p=>p.includes(item.name.toLowerCase())||item.name.toLowerCase().includes(p));
-      addMenuItem(item.name,item.price||'','',inPhotos?'praised':''); added++;
+      const before=menuItems.length;
+      addMenuItemIfNew(item.name,item.price||'','',inPhotos?'praised':'');
+      if(menuItems.length>before) added++;
     }
     for (const photo of photoSubjects) {
       const alreadyAdded=allItems.some(m=>m.name.toLowerCase()===photo.item.toLowerCase());
-      if (!alreadyAdded&&photo.photos>=2) { addMenuItem(photo.item,'','','praised'); added++; }
+      if (!alreadyAdded&&photo.photos>=2) {
+        const before=menuItems.length;
+        addMenuItemIfNew(photo.item,'','','praised');
+        if(menuItems.length>before) added++;
+      }
     }
     if(statusEl) statusEl.innerHTML=`<span style="color:var(--teal);">◎ Populated ${added} items. Review list above, fill in missing prices, then run Menu Analysis.</span>`;
   } catch(e) { if(statusEl) statusEl.innerHTML=`<span style="color:var(--danger);">Failed: ${escHtml(e.message)}</span>`; }
