@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PresageIQ — Internal Workspace · Towns & Walley Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#080b10;--bg2:#0d1117;--bg3:#131920;--bg4:#1a2230;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#eef1f4;--text2:#8a9aaa;--text3:#3d5060;
+  --gold:#c8963e;--gold2:#e8b86d;
+  --teal:#52c5b0;--purple:#a78bfa;--danger:#f85149;--warn:#e3b341;
+  --font-display:'Syne',sans-serif;--font-mono:'DM Mono',monospace;
+}
+*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;display:flex;flex-direction:column;}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.4;}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:50px;flex-shrink:0;background:var(--bg2);border-bottom:1px solid var(--border);position:relative;}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--gold),transparent 60%);}
+.logo{font-family:var(--font-display);font-size:14px;font-weight:800;white-space:nowrap;}
+.logo span{color:var(--gold);}
+.topbar-sep{color:var(--text3);font-size:10px;}
+.topbar-nav-link{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);text-decoration:none;transition:color .2s;padding:4px 0;}
+.topbar-nav-link:hover{color:var(--gold);}
+.topbar-nav-link.active{color:var(--gold2);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);}
+.back-btn{background:transparent;border:1px solid var(--border2);color:var(--text2);padding:5px 12px;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:.5px;cursor:pointer;transition:all .2s;}
+.back-btn:hover{border-color:var(--gold);color:var(--gold);}
+.client-pill{background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.25);color:var(--gold);font-size:10px;padding:3px 10px;border-radius:3px;letter-spacing:.5px;}
+.tier-badge{font-size:9px;padding:2px 8px;border-radius:2px;letter-spacing:.5px;text-transform:uppercase;border:1px solid;}
+.tier-launch{color:#34d399;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.07);}
+.tier-consult{color:var(--gold);border-color:rgba(200,150,62,.3);background:rgba(200,150,62,.07);}
+.tier-audit{color:var(--purple);border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.07);}
+.tier-retainer{color:var(--teal);border-color:rgba(82,197,176,.3);background:rgba(82,197,176,.07);}
+
+/* QUEUE VIEW */
+#queue-view{flex:1;overflow-y:auto;padding:28px 32px;}
+.queue-header{display:flex;align-items:center;gap:14px;margin-bottom:24px;flex-wrap:wrap;}
+.queue-title{font-family:var(--font-display);font-size:20px;font-weight:800;letter-spacing:-.5px;}
+.queue-title span{color:var(--gold);}
+.new-session-btn{background:var(--gold);border:none;color:#080b10;padding:8px 18px;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:opacity .2s;margin-left:auto;}
+.new-session-btn:hover{opacity:.85;}
+.filter-row{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+.filter-chip{background:transparent;border:1px solid var(--border2);color:var(--text3);padding:4px 12px;border-radius:20px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .2s;letter-spacing:.5px;}
+.filter-chip:hover{border-color:var(--gold);color:var(--gold);}
+.filter-chip.active{background:rgba(200,150,62,.1);border-color:rgba(200,150,62,.3);color:var(--gold);}
+.refresh-btn{background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .2s;margin-left:auto;}
+.refresh-btn:hover{border-color:var(--border2);color:var(--text2);}
+.queue-status-msg{font-size:11px;color:var(--text3);padding:32px 0;text-align:center;}
+.queue-list{display:flex;flex-direction:column;gap:8px;}
+
+/* CLIENT CARDS */
+.client-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px 18px;transition:border-color .2s;}
+.client-card:hover{border-color:var(--border2);}
+.client-card-inner{display:flex;align-items:flex-start;gap:14px;}
+.client-card-body{flex:1;min-width:0;}
+.client-card-name{font-size:13px;color:var(--text);font-weight:500;margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.status-badge{font-size:9px;padding:2px 7px;border-radius:2px;border:1px solid;text-transform:uppercase;letter-spacing:.5px;}
+.status-pending{color:var(--warn);border-color:rgba(227,179,65,.3);background:rgba(227,179,65,.06);}
+.status-active{color:var(--teal);border-color:rgba(82,197,176,.3);background:rgba(82,197,176,.06);}
+.status-complete{color:var(--text3);border-color:var(--border2);background:transparent;}
+.client-card-meta{font-size:11px;color:var(--text2);margin-bottom:4px;}
+.client-card-contact{font-size:11px;color:var(--text3);}
+.client-card-concept{font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5;border-left:2px solid var(--border2);padding-left:8px;}
+.client-card-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;}
+.load-btn{background:rgba(200,150,62,.1);border:1px solid rgba(200,150,62,.3);color:var(--gold);padding:7px 14px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;white-space:nowrap;transition:all .2s;letter-spacing:.5px;}
+.load-btn:hover{background:rgba(200,150,62,.18);}
+.status-select{background:var(--bg4);border:1px solid var(--border2);color:var(--text2);padding:5px 8px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;appearance:none;}
+
+/* TYPING */
+@keyframes typing{0%,100%{opacity:.3;}50%{opacity:1;}}
+.dot-t{width:4px;height:4px;border-radius:50%;background:var(--gold);animation:typing .8s infinite;display:inline-block;}
+.dot-t:nth-child(2){animation-delay:.15s;}
+.dot-t:nth-child(3){animation-delay:.3s;}
+.typing-row{display:flex;gap:4px;align-items:center;padding:4px 0;}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.72);align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:28px 32px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+.modal-title{font-family:var(--font-display);font-size:16px;font-weight:800;margin-bottom:4px;}
+.modal-sub{font-size:11px;color:var(--text3);margin-bottom:20px;}
+.field-group{margin-bottom:18px;}
+.field-group-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.field-group-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.field-row.one{grid-template-columns:1fr;}
+.field-row.three{grid-template-columns:1fr 1fr 1fr;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);}
+.fi,.fs,.fta{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:3px;font-family:var(--font-mono);font-size:12px;outline:none;transition:border .2s;width:100%;}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--gold);}
+.fi::placeholder,.fta::placeholder{color:var(--text3);}
+.fs{appearance:none;cursor:pointer;}
+.fs option{background:var(--bg3);}
+.fta{resize:vertical;min-height:70px;line-height:1.6;}
+.modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
+.modal-btn-primary{background:var(--gold);border:none;color:#080b10;padding:9px 20px;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:opacity .2s;}
+.modal-btn-primary:hover{opacity:.85;}
+.modal-btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+.modal-btn-cancel{background:transparent;border:1px solid var(--border2);color:var(--text3);padding:9px 16px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .2s;}
+.modal-btn-cancel:hover{border-color:var(--border2);color:var(--text2);}
+.modal-error{font-size:11px;color:var(--danger);margin-top:6px;min-height:14px;}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">Presage<span>IQ</span></div>
+  <span class="topbar-sep">|</span>
+  <a href="/consult" class="topbar-nav-link active">Client Queue</a>
+  <span class="topbar-sep">·</span>
+  <a href="/marketiq" class="topbar-nav-link">Market Intel</a>
+
+  <!-- Session-state topbar additions (hidden until session loaded) -->
+  <span id="topbar-session-extras" style="display:none;display:contents;">
+    <span class="topbar-sep" id="topbar-sep2" style="display:none;">|</span>
+    <span class="client-pill" id="topbar-client-name" style="display:none;"></span>
+    <span class="tier-badge" id="topbar-tier-badge" style="display:none;"></span>
+  </span>
+
+  <div class="topbar-right">
+    <button class="back-btn" id="back-to-queue-btn" style="display:none;" onclick="exitSession()">&#8592; Queue</button>
+    <div class="status-dot"></div>
+    <span style="font-size:10px;color:var(--text2);letter-spacing:.5px;">AI Active</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- STATE 1: CLIENT QUEUE                       -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="queue-view">
+  <div class="queue-header">
+    <div>
+      <div class="queue-title">Client <span>Queue</span></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;">Internal workspace · Towns &amp; Walley Intelligence</div>
+    </div>
+    <button class="new-session-btn" onclick="openNewSessionModal()">+ New Session</button>
+  </div>
+
+  <div class="filter-row">
+    <button class="filter-chip active" id="qf-all" onclick="filterQueue('all')">All</button>
+    <button class="filter-chip" id="qf-pending" onclick="filterQueue('pending')">Pending</button>
+    <button class="filter-chip" id="qf-active" onclick="filterQueue('active')">Active</button>
+    <button class="filter-chip" id="qf-complete" onclick="filterQueue('complete')">Complete</button>
+    <button class="refresh-btn" onclick="loadClientQueue()">&#8635; Refresh</button>
+  </div>
+
+  <div id="queue-status-msg" class="queue-status-msg">
+    <div class="typing-row" style="justify-content:center;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>
+    <div style="margin-top:8px;">Loading clients...</div>
+  </div>
+  <div class="queue-list" id="queue-list"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- NEW SESSION MODAL                           -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="new-session-modal">
+  <div class="modal-box">
+    <div class="modal-title">New Session</div>
+    <div class="modal-sub">Manually create a client record and start a session immediately.</div>
+
+    <div class="field-group">
+      <div class="field-group-title">Client</div>
+      <div class="field-row">
+        <div class="field"><label>Name *</label><input class="fi" id="ns-name" placeholder="Full name or business contact"/></div>
+        <div class="field"><label>Email *</label><input class="fi" id="ns-email" placeholder="client@email.com" type="email"/></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Phone</label><input class="fi" id="ns-phone" placeholder="(816) 555-0100"/></div>
+        <div class="field"><label>Business Name</label><input class="fi" id="ns-bizname" placeholder="Restaurant or business name"/></div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-group-title">Session</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Service Tier *</label>
+          <select class="fs" id="ns-service">
+            <option value="">— Select —</option>
+            <option value="Presage Launch">Presage Launch — $500</option>
+            <option value="Presage Consult">Presage Consult — $1,200</option>
+            <option value="Presage Audit">Presage Audit — $2,500</option>
+            <option value="Presage Retainer">Presage Retainer — $600/mo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Neighborhood</label>
+          <select class="fs" id="ns-neighborhood">
+            <option value="">— Select —</option>
+            <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+            <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+            <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+            <option>Grandview</option><option>East Side / Prospect</option>
+            <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+            <option>North KC</option><option>Gladstone</option><option>Independence</option>
+            <option>Lee's Summit</option><option>Overland Park</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row one">
+        <div class="field">
+          <label>Concept / Challenge</label>
+          <textarea class="fta" id="ns-concept" placeholder="What are they working on? What problem are they trying to solve?"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-error" id="ns-error"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closeNewSessionModal()">Cancel</button>
+      <button class="modal-btn-primary" id="ns-submit-btn" onclick="submitNewSession()">Create &amp; Start Session &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================
+// CONFIG
+// =============================================
+const PROXY_URL = '/api/chat';
+
+// =============================================
+// UTILS
+// =============================================
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(utc) {
+  const s = Math.floor(Date.now() / 1000) - utc;
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+function tierFromService(service) {
+  if (!service) return 'consult';
+  const s = service.toLowerCase();
+  if (s.includes('launch')) return 'launch';
+  if (s.includes('audit')) return 'audit';
+  if (s.includes('retainer')) return 'retainer';
+  return 'consult';
+}
+
+function tierLabel(service) {
+  if (!service) return 'Presage Consult';
+  const s = service.toLowerCase();
+  if (s.includes('launch')) return 'Presage Launch';
+  if (s.includes('audit')) return 'Presage Audit';
+  if (s.includes('retainer')) return 'Presage Retainer';
+  return 'Presage Consult';
+}
+
+function tierClass(service) {
+  return 'tier-' + tierFromService(service);
+}
+
+// =============================================
+// CLIENT QUEUE
+// =============================================
+let allClients = [];
+let queueFilter = 'all';
+
+async function loadClientQueue() {
+  const statusEl = document.getElementById('queue-status-msg');
+  const listEl = document.getElementById('queue-list');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<div class="typing-row" style="justify-content:center;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><div style="margin-top:8px;">Loading clients...</div>';
+  listEl.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/clients');
+    if (!resp.ok) throw new Error('Server error ' + resp.status);
+    allClients = await resp.json();
+    renderQueueList();
+  } catch(e) {
+    statusEl.innerHTML = '<span style="color:var(--danger);">Failed to load clients — ' + escHtml(e.message) + '</span>';
+  }
+}
+
+function renderQueueList() {
+  const statusEl = document.getElementById('queue-status-msg');
+  const listEl = document.getElementById('queue-list');
+  const filtered = queueFilter === 'all' ? allClients : allClients.filter(cl => cl.status === queueFilter);
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = allClients.length === 0
+      ? '<div style="color:var(--text3);">No clients yet. Click <strong style="color:var(--gold);">+ New Session</strong> to create one, or wait for submissions from the public site.</div>'
+      : '<div style="color:var(--text3);">No clients match this filter.</div>';
+    return;
+  }
+
+  statusEl.style.display = 'none';
+  listEl.innerHTML = filtered.map(cl => {
+    const date = new Date(cl.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    const tier = tierLabel(cl.service);
+    const nbhd = cl.neighborhood || 'Neighborhood not specified';
+    const tClass = tierClass(cl.service);
+    const sClass = 'status-' + (cl.status || 'pending');
+
+    return `<div class="client-card" id="qrow-${cl.id}">
+      <div class="client-card-inner">
+        <div class="client-card-body">
+          <div class="client-card-name">
+            ${escHtml(cl.name)}
+            ${cl.bizname ? `<span style="font-size:11px;color:var(--text3);">· ${escHtml(cl.bizname)}</span>` : ''}
+            <span class="status-badge ${sClass}">${cl.status || 'pending'}</span>
+          </div>
+          <div class="client-card-meta">
+            <span class="tier-badge ${tClass}">${tier}</span>
+            <span style="margin-left:8px;">${escHtml(nbhd)}</span>
+            <span style="color:var(--text3);margin-left:8px;">· ${date}</span>
+          </div>
+          <div class="client-card-contact">${escHtml(cl.email)}${cl.phone ? ' · ' + escHtml(cl.phone) : ''}</div>
+          ${cl.concept ? `<div class="client-card-concept">${escHtml(cl.concept.substring(0, 200))}${cl.concept.length > 200 ? '...' : ''}</div>` : ''}
+        </div>
+        <div class="client-card-actions">
+          <button class="load-btn" onclick="enterSession(${cl.id})">Load Client &#8594;</button>
+          <select class="status-select" onchange="updateClientStatus(${cl.id}, this.value)">
+            <option value="pending" ${cl.status==='pending'?'selected':''}>Pending</option>
+            <option value="active" ${cl.status==='active'?'selected':''}>Active</option>
+            <option value="complete" ${cl.status==='complete'?'selected':''}>Complete</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterQueue(filter) {
+  queueFilter = filter;
+  ['all','pending','active','complete'].forEach(f => {
+    const btn = document.getElementById('qf-' + f);
+    if (!btn) return;
+    btn.classList.toggle('active', f === filter);
+  });
+  renderQueueList();
+}
+
+async function updateClientStatus(id, status) {
+  try {
+    const resp = await fetch('/api/clients/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (!resp.ok) throw new Error();
+    const updated = await resp.json();
+    const idx = allClients.findIndex(cl => cl.id === id);
+    if (idx !== -1) allClients[idx] = updated;
+    renderQueueList();
+  } catch(e) {
+    alert('Failed to update status.');
+  }
+}
+
+// =============================================
+// SESSION (stub — wired in Commit 2)
+// =============================================
+function enterSession(clientId) {
+  const cl = allClients.find(c => c.id === clientId);
+  if (!cl) return;
+  // Session view will be added in Commit 2
+  // For now, show a temporary indicator
+  const pill = document.getElementById('topbar-client-name');
+  const badge = document.getElementById('topbar-tier-badge');
+  const sep = document.getElementById('topbar-sep2');
+  const backBtn = document.getElementById('back-to-queue-btn');
+  pill.textContent = cl.bizname || cl.name;
+  badge.textContent = tierLabel(cl.service);
+  badge.className = 'tier-badge ' + tierClass(cl.service);
+  pill.style.display = '';
+  badge.style.display = '';
+  sep.style.display = '';
+  backBtn.style.display = '';
+}
+
+function exitSession() {
+  document.getElementById('topbar-client-name').style.display = 'none';
+  document.getElementById('topbar-tier-badge').style.display = 'none';
+  document.getElementById('topbar-sep2').style.display = 'none';
+  document.getElementById('back-to-queue-btn').style.display = 'none';
+}
+
+// =============================================
+// NEW SESSION MODAL
+// =============================================
+function openNewSessionModal() {
+  document.getElementById('new-session-modal').classList.add('open');
+  document.getElementById('ns-error').textContent = '';
+  document.getElementById('ns-name').focus();
+}
+
+function closeNewSessionModal() {
+  document.getElementById('new-session-modal').classList.remove('open');
+}
+
+async function submitNewSession() {
+  const nameEl  = document.getElementById('ns-name');
+  const emailEl = document.getElementById('ns-email');
+  const serviceEl = document.getElementById('ns-service');
+  const errEl   = document.getElementById('ns-error');
+  const btn     = document.getElementById('ns-submit-btn');
+
+  errEl.textContent = '';
+
+  if (!nameEl.value.trim())  { errEl.textContent = 'Name is required.'; nameEl.focus(); return; }
+  if (!emailEl.value.trim()) { errEl.textContent = 'Email is required.'; emailEl.focus(); return; }
+  if (!serviceEl.value)      { errEl.textContent = 'Select a service tier.'; serviceEl.focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  try {
+    const resp = await fetch('/api/clients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:         nameEl.value.trim(),
+        email:        emailEl.value.trim(),
+        phone:        document.getElementById('ns-phone').value.trim(),
+        bizname:      document.getElementById('ns-bizname').value.trim(),
+        service:      serviceEl.value,
+        neighborhood: document.getElementById('ns-neighborhood').value,
+        concept:      document.getElementById('ns-concept').value.trim(),
+        status:       'active'
+      })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Server error ' + resp.status);
+    }
+    const newClient = await resp.json();
+    allClients.unshift(newClient);
+
+    // Reset form
+    ['ns-name','ns-email','ns-phone','ns-bizname','ns-concept'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('ns-service').value = '';
+    document.getElementById('ns-neighborhood').value = '';
+
+    closeNewSessionModal();
+    renderQueueList();
+    enterSession(newClient.id);
+  } catch(e) {
+    errEl.textContent = 'Failed to create client: ' + e.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Create & Start Session →';
+}
+
+// =============================================
+// INIT
+// =============================================
+document.getElementById('new-session-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeNewSessionModal();
+});
+
+loadClientQueue();
+</script>
+</body>
+</html>
