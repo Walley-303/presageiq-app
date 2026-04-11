@@ -1341,20 +1341,757 @@ async function checkIntelStatus(target) {
   } catch(e) { clearInterval(intelPollTimer); intelPollTimer = null; }
 }
 
-// Stubs for Commit 3 AI functions
-async function analyzeMenu()      { alert('AI analysis wiring coming in next commit.'); }
-async function analyzeInventory() { alert('AI analysis wiring coming in next commit.'); }
-async function generateBrief()    { alert('AI report generation coming in next commit.'); }
-async function runMarketAnalysis()   { alert('AI analysis coming in next commit.'); }
-async function runConceptReddit()    { alert('Coming in next commit.'); }
-async function runCommunityAnalysis()    { alert('Coming in next commit.'); }
-async function runStoredCommunityAnalysis() { alert('Coming in next commit.'); }
-async function runFinancialProjection()  { alert('Coming in next commit.'); }
-async function runFundingAnalysis()      { alert('Coming in next commit.'); }
-async function runPressAnalysis()        { alert('Coming in next commit.'); }
-async function runPressReddit()          { alert('Coming in next commit.'); }
-async function uploadMenuPhoto()         { alert('Coming in next commit.'); }
-function previewMenuUpload()             {}
+// =============================================
+// CORE AI CALL
+// =============================================
+async function callAI(payload) {
+  const resp = await fetch(PROXY_URL, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msg = data?.error?.message || data?.error || `HTTP ${resp.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function renderAI(text) {
+  return text.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+}
+
+// =============================================
+// REDDIT HELPERS
+// =============================================
+async function redditSearch(query, sub) {
+  try {
+    const r = await fetch(`/api/reddit-search?q=${encodeURIComponent(query)}&sub=${encodeURIComponent(sub)}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return (d?.data?.children || []).map(c => ({ ...c.data, sub }));
+  } catch(e) { return []; }
+}
+
+function renderRedditPosts(posts, emptyMsg) {
+  if (!posts.length) return `<span style="color:var(--text3);font-size:11px;">${emptyMsg}</span>`;
+  return `<div style="font-size:10px;color:var(--text3);margin-bottom:10px;letter-spacing:.5px;">${posts.length} Reddit post${posts.length>1?'s':''} found</div>` +
+    posts.map(p => {
+      const snippet = p.selftext ? escHtml(p.selftext.substring(0,180))+'...' : '';
+      return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:6px;cursor:pointer;" onclick="window.open('https://reddit.com${p.permalink}','_blank')">
+        <div style="font-size:11px;color:var(--text);margin-bottom:4px;">${escHtml(p.title)}</div>
+        ${snippet?`<div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-style:italic;">${snippet}</div>`:''}
+        <div style="font-size:9px;color:var(--text3);display:flex;gap:8px;"><span style="color:#ff4500;">r/${p.sub}</span><span>↑${p.score}</span><span>${timeAgo(p.created_utc)}</span><span style="margin-left:auto;color:var(--teal);">↗ Open</span></div>
+      </div>`;
+    }).join('');
+}
+
+// =============================================
+// SKIP MODULE
+// =============================================
+function skipModule(id, reason) {
+  const bodyMap = { menu:'menu-result-body', reviews:'review-result-body', inventory:'inv-result-body', competitors:'comp-result-body', press:'press-result-body' };
+  const resultMap = { menu:'menu-result', reviews:'review-result', inventory:'inv-result', competitors:'comp-result', press:'press-result' };
+  const bodyEl = document.getElementById(bodyMap[id]);
+  const resultEl = document.getElementById(resultMap[id]);
+  if (bodyEl) {
+    const label = reason==='N/A' ? 'N/A — Not applicable for this business type.' : 'TBD — To be completed in a follow-up session.';
+    const color = reason==='N/A' ? 'var(--text3)' : 'var(--warn)';
+    bodyEl.innerHTML = `<span style="font-size:11px;color:${color};font-style:italic;">${label}</span>`;
+    if (resultEl) resultEl.classList.add('visible');
+  }
+  markDone(id);
+}
+
+// =============================================
+// MENU ANALYSIS
+// =============================================
+async function analyzeMenu() {
+  const btn = document.getElementById('menu-run-btn');
+  const result = document.getElementById('menu-result');
+  const body = document.getElementById('menu-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const itemSummary = menuItems.length > 0
+    ? menuItems.map(m=>`- ${m.name}: Price ${m.price}, Sales Volume ${m.vol||'unknown'}, Review Mentions ${m.mentions||'unknown'}`).join('\n')
+    : 'No items entered.';
+
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:900,
+      system:`You are PresageIQ conducting a Presage Audit for an existing KC business. Be direct, specific, and actionable. No generic advice. Reference the actual items provided.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nMENU ITEMS:\n${itemSummary}\n\nOWNER'S VIEW OF HIGHLIGHTS: ${document.getElementById('m-highlights').value||'Not provided'}\nKNOWN WEAK SPOTS: ${document.getElementById('m-weak').value||'Not provided'}\nPASTED REVIEWS: ${document.getElementById('m-reviews').value||'None provided'}\n\nAnalyze this menu. Structure:\n**STAR ITEMS** — what's working and should be featured more prominently\n**UNDERPERFORMERS** — items to fix, relaunch, or cut (be specific: which ones and why)\n**MISSING FROM MENU** — gaps based on reviews and neighborhood context\n**MARKETING PRIORITY** — the single highest-leverage change (what to push in ads/signage)\n**LAUNCH OPPORTUNITY** — one new item concept that fits this menu and fills a documented gap`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+    markDone('menu');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled = false;
+}
+
+async function scanMenuReddit() {
+  const btn = document.getElementById('menu-reddit-btn');
+  const result = document.getElementById('menu-result');
+  const body = document.getElementById('menu-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  const biz = document.getElementById('s-biz').value.trim();
+  const nbhd = document.getElementById('s-nbhd').value.trim();
+  if (!biz) { body.innerHTML='<span style="color:var(--warn);">Enter a business name in Client Setup first.</span>'; btn.disabled=false; return; }
+  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for ${escHtml(biz)}...</span>`;
+  const query = nbhd ? `${biz} ${nbhd}` : biz;
+  let all = [];
+  for (const sub of ['kansascity','KCFoodScene']) all.push(...await redditSearch(query, sub));
+  const seen = new Set();
+  all = all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
+  body.innerHTML = renderRedditPosts(all, `No Reddit posts found for "${escHtml(biz)}".`);
+  btn.disabled = false;
+}
+
+// =============================================
+// REVIEW SIGNALS
+// =============================================
+async function analyzeReviews() {
+  const btn = document.getElementById('review-run-btn');
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const google = document.getElementById('r-google')?.value||'';
+  const yelp   = document.getElementById('r-yelp')?.value||'';
+  const social = document.getElementById('r-social')?.value||'';
+  const allReviews = [google&&`GOOGLE REVIEWS:\n${google}`,yelp&&`YELP REVIEWS:\n${yelp}`,social&&`SOCIAL/OTHER:\n${social}`].filter(Boolean).join('\n\n');
+  if (!allReviews.trim()) { body.innerHTML='<span style="color:var(--warn);">Paste at least one source of reviews first.</span>'; btn.disabled=false; return; }
+
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:900,
+      system:`You are PresageIQ extracting market intelligence from customer reviews for a KC business. Be specific — quote or closely paraphrase actual review content. Identify patterns, not just individual comments.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nREVIEW SOURCES:\n${allReviews}\n\nExtract intelligence. Structure:\n**WHAT CUSTOMERS LOVE** — specific items, experiences, or qualities mentioned positively (with frequency)\n**COMMON COMPLAINTS** — recurring issues (service, quality, price, parking, etc.)\n**UNMET REQUESTS** — what customers ask for that doesn't exist yet\n**ITEM-LEVEL SIGNALS** — any specific menu items praised or criticized\n**SENTIMENT SUMMARY** — overall brand health signal (1-2 sentences)\n**PRIORITY ACTION** — the single most impactful thing to fix or capitalize on based on these reviews`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+    markDone('reviews');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled = false;
+}
+
+async function scanRedditReviews() {
+  const btn = document.getElementById('review-reddit-btn');
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  btn.disabled = true; result.classList.add('visible');
+  const biz = document.getElementById('s-biz').value.trim();
+  const nbhd = document.getElementById('s-nbhd').value.trim();
+  if (!biz) { body.innerHTML='<span style="color:var(--warn);">Enter business name in Client Setup first.</span>'; btn.disabled=false; return; }
+  body.innerHTML = `<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>`;
+  let all = [];
+  for (const sub of ['kansascity','KCFoodScene']) {
+    const [byRev, byName] = await Promise.all([redditSearch(`"${biz}" review`, sub), redditSearch(nbhd?`${biz} ${nbhd}`:biz, sub)]);
+    all.push(...byRev,...byName);
+  }
+  const seen = new Set();
+  all = all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,10);
+  body.innerHTML = renderRedditPosts(all, `No Reddit mentions found for "${escHtml(biz)}".`);
+  btn.disabled = false;
+}
+
+async function generateReviewResearchBrief() {
+  const result = document.getElementById('review-result');
+  const body = document.getElementById('review-result-body');
+  result.classList.add('visible');
+  body.innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const biz = document.getElementById('s-biz').value||'this business';
+  const type = document.getElementById('s-type').value||'business';
+  const nbhd = document.getElementById('s-nbhd').value||'Kansas City';
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:700,
+      system:'You are PresageIQ preparing a pre-session research brief for a business analyst. Generate specific, actionable search instructions and keyword lists the analyst can use right now. Be precise — name exact search strings and what signals to flag.',
+      messages:[{role:'user',content:`Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nGenerate a Research Brief:\n\n**SEARCH STRINGS TO USE**\nExact queries for Google, Yelp, and Reddit.\n\n**WHAT TO LOOK FOR — GOOGLE REVIEWS**\nSpecific themes and complaint patterns for this business type in KC.\n\n**WHAT TO LOOK FOR — YELP**\nYelp-specific patterns and filters.\n\n**REDDIT KEYWORDS**\nExact phrases for r/kansascity and r/KCFoodScene.\n\n**COMPETITOR SIGNALS**\nHow to identify 3-5 direct competitors from review data and gaps to watch.`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Research brief failed — try again.</span>'; }
+}
+
+// =============================================
+// INVENTORY & SUPPLY CHAIN
+// =============================================
+async function analyzeInventory() {
+  const btn = document.getElementById('inv-run-btn');
+  const result = document.getElementById('inv-result');
+  const body = document.getElementById('inv-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+
+  const vendorSummary = vendorItems.length > 0
+    ? vendorItems.map(v=>`- ${v.name}: Category ${v.cat||'unknown'}, Est. ${v.spend||'unknown'}/mo, Local: ${v.local||'unknown'}`).join('\n')
+    : 'No vendors entered.';
+
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:800,
+      system:`You are PresageIQ conducting a supply chain analysis for a KC business. Focus on consolidation opportunities, local sourcing in the KC/Missouri/Kansas region, and cost efficiency. Be specific and actionable.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCURRENT VENDORS:\n${vendorSummary}\n\nSOURCING PROBLEMS: ${document.getElementById('inv-problems')?.value||'None noted'}\nSOURCING WISHLIST: ${document.getElementById('inv-wish')?.value||'None noted'}\n\nAnalyze this supply chain. Structure:\n**CONSOLIDATION OPPORTUNITIES** — vendors that can be merged or eliminated\n**PRICING FLAGS** — areas where they're likely overpaying\n**LOCAL SOURCING GAPS** — KC/regional alternatives worth exploring (be specific about KC-area options where you know them)\n**QUICK WINS** — 2-3 changes that reduce cost or improve quality with low friction\n**STRATEGIC SHIFT** — one bigger supply chain move that could meaningfully improve operations`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+    markDone('inventory');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+// =============================================
+// COMPETITOR INTEL
+// =============================================
+async function analyzeCompetitors() {
+  const btn = document.getElementById('comp-run-btn');
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:900,
+      system:`You are PresageIQ conducting a competitor gap analysis for a KC business. Be direct. The goal is to identify specific opportunities the client can act on.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nCOMPETITORS:\n${document.getElementById('comp-list')?.value||'Not provided'}\n\nWHAT COMPETITORS WIN ON: ${document.getElementById('comp-wins')?.value||'Not provided'}\nCOMPETITOR WEAKNESSES: ${document.getElementById('comp-gaps')?.value||'Not provided'}\n\nAnalyze the competitive landscape. Structure:\n**WHAT THEY'RE LOSING TO COMPETITORS** — specific areas where competitors outperform them\n**GAPS COMPETITORS LEAVE OPEN** — what nobody in this market is doing well that this business could own\n**STEAL THIS** — one specific item, experience, or strategy a competitor is winning on that this business should adapt\n**POSITIONING RECOMMENDATION** — how this business should position against the competitive set\n**HIGHEST LEVERAGE MOVE** — the single competitive action with the most upside`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+    markDone('competitors');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+async function aiIdentifyCompetitors() {
+  const btn = document.getElementById('comp-run-btn');
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const biz = document.getElementById('s-biz')?.value||'this business';
+  const type = document.getElementById('s-type')?.value||'business';
+  const nbhd = document.getElementById('s-nbhd')?.value||'Kansas City';
+  const listEl = document.getElementById('comp-list');
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:700,
+      system:'You are PresageIQ identifying the competitive landscape for a KC business. Use knowledge of Kansas City neighborhoods and business categories. Name real businesses where possible. End your response with a section starting with exactly "PLAIN LIST:" followed by competitor names one per line.',
+      messages:[{role:'user',content:`Business: ${biz}\nType: ${type}\nNeighborhood: ${nbhd}, Kansas City\n\nIdentify 4-6 direct competitors. For each: name, why they compete directly, strengths, weak spots.\nThen give a one-line COMPETITIVE LANDSCAPE SUMMARY.\n\nFinally output exactly:\nPLAIN LIST:\n[name — type, one per line]`}]
+    });
+    const text = data.content?.[0]?.text||'';
+    const plainMatch = text.match(/PLAIN LIST:([\s\S]*?)$/i);
+    if (plainMatch && listEl) listEl.value = plainMatch[1].trim();
+    const display = text.replace(/PLAIN LIST:[\s\S]*$/i,'').trim();
+    body.innerHTML = renderAI(display);
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Competitor scan failed — try again.</span>`; }
+  btn.disabled=false;
+}
+
+async function scanCompetitorReddit() {
+  const btn = document.getElementById('comp-reddit-btn');
+  if (!btn) return;
+  btn.disabled=true;
+  const nbhd = document.getElementById('s-nbhd')?.value||'';
+  const biz = document.getElementById('s-biz')?.value.trim()||'';
+  const firstComp = nbhd||biz;
+  if (!firstComp) { alert('Load a client with a business name or neighborhood first.'); btn.disabled=false; return; }
+  const result = document.getElementById('comp-result');
+  const body = document.getElementById('comp-result-body');
+  result.classList.add('visible');
+  body.innerHTML=`<div style="font-size:11px;color:var(--text3);">Scanning Reddit for competitor mentions...</div>`;
+  const query = nbhd ? `${firstComp} ${nbhd}` : firstComp;
+  let all=[];
+  for(const sub of ['kansascity','KCFoodScene']) all.push(...await redditSearch(query,sub));
+  const seen=new Set();
+  all=all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,6);
+  body.innerHTML = renderRedditPosts(all, `No Reddit posts found for "${escHtml(firstComp)}".`);
+  btn.disabled=false;
+}
+
+function renderCompetitorCards(competitors, excludeId) {
+  const container = document.getElementById('comp-list-auto');
+  const cards = document.getElementById('comp-list-cards');
+  if (!container||!cards) return;
+  const PRICE_SYM = {PRICE_LEVEL_FREE:'Free',PRICE_LEVEL_INEXPENSIVE:'$',PRICE_LEVEL_MODERATE:'$$',PRICE_LEVEL_EXPENSIVE:'$$$',PRICE_LEVEL_VERY_EXPENSIVE:'$$$$'};
+  const nearby = competitors.filter(c=>c.id!==excludeId).slice(0,20);
+  if (!nearby.length) return;
+  cards.innerHTML = nearby.map(c=>{
+    const name=c.displayName?.text||'Unknown';
+    const rating=c.rating?`${c.rating}★`:'—';
+    const reviews=c.userRatingCount?`(${c.userRatingCount.toLocaleString()})`:'';
+    const price=PRICE_SYM[c.priceLevel]||'';
+    const type=(c.primaryType||'').replace(/_/g,' ');
+    const ratingColor=c.rating>=4.5?'var(--teal)':c.rating>=4.0?'var(--text2)':c.rating>=3.5?'var(--warn)':'var(--danger)';
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:10px;">
+      <span style="color:${ratingColor};font-size:12px;font-weight:600;min-width:36px;">${rating}</span>
+      <span style="color:var(--text3);font-size:10px;min-width:40px;">${reviews}</span>
+      <span style="flex:1;font-size:11px;color:var(--text);">${escHtml(name)}</span>
+      <span style="font-size:10px;color:var(--text3);">${price}</span>
+      <span style="font-size:9px;color:var(--text3);text-transform:capitalize;">${type}</span>
+    </div>`;
+  }).join('');
+  container.style.display='block';
+}
+
+// =============================================
+// KC PRESS & COMMUNITY COVERAGE
+// =============================================
+async function runPressAnalysis() {
+  const btn = document.getElementById('press-db-btn');
+  const result = document.getElementById('press-result');
+  const body = document.getElementById('press-result-body');
+  const statusEl = document.getElementById('press-status');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  if (statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Querying intelligence database...</span>';
+
+  const biz = document.getElementById('s-biz')?.value.trim()||document.getElementById('cc-client')?.value.trim()||'';
+  const nbhd = document.getElementById('s-nbhd')?.value.trim()||document.getElementById('cc-nbhd')?.value.trim()||'';
+  const pasted = document.getElementById('press-paste')?.value.trim()||'';
+  const isRetainer = currentTier==='retainer';
+
+  // Try stored intel first
+  const params = new URLSearchParams({ limit:40 });
+  if (nbhd) params.set('neighborhood', nbhd);
+
+  try {
+    const data = await fetch(`/api/intel/community?${params}`).then(r=>r.json());
+    const records = data.records||[];
+
+    const context = records.length
+      ? records.map(r=>`[${r.source.toUpperCase()} · ${r.sentiment||'neutral'}] ${r.title||''}\n${r.body?r.body.substring(0,250):''}`).join('\n\n---\n\n')
+      : '';
+
+    const fullContext = [context, pasted].filter(Boolean).join('\n\n---\n\n');
+
+    if (!fullContext) {
+      body.innerHTML='<span style="color:var(--warn);">No stored intelligence found for this neighborhood. Run a Reddit collection from the Data Library, or paste content below and re-run.</span>';
+      if (statusEl) statusEl.innerHTML='';
+      btn.disabled=false; return;
+    }
+
+    const systemPrompt = isRetainer
+      ? `You are PresageIQ synthesizing monthly community intelligence for a KC retainer client. Focus on what's changed, new trends, and emerging signals relevant to their business type and neighborhood.`
+      : `You are PresageIQ synthesizing KC press and community coverage for a business client. Focus on neighborhood conditions, business sentiment, and signals relevant to their industry.`;
+
+    const userPrompt = isRetainer
+      ? `Client: ${biz||'Retainer Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nCOMMUNITY INTELLIGENCE DATA:\n${fullContext}\n\nSynthesize for monthly retainer report:\n\n**WHAT'S NEW THIS MONTH** — notable shifts, news, or activity\n\n**TREND SIGNALS** — patterns emerging in the data\n\n**NEIGHBORHOOD PULSE** — community sentiment and conditions\n\n**RELEVANT TO THIS BUSINESS** — specifically what applies to ${biz||'this client'}\n\n**RECOMMENDED RESPONSE** — one actionable recommendation based on what you're seeing`
+      : `Business: ${biz||'Client'}\nNeighborhood: ${nbhd||'Kansas City'}\n\nCOMMUNITY INTELLIGENCE DATA (${records.length} records):\n${fullContext}\n\nSynthesize press and community coverage. Structure:\n\n**NEIGHBORHOOD CONDITIONS** — what the data says about conditions in ${nbhd||'KC'} for this type of business\n\n**RELEVANT COVERAGE** — news or community mentions relevant to this business or competitive set\n\n**COMMUNITY SENTIMENT** — overall tone toward this area and business category\n\n**OPPORTUNITIES** — what the coverage signals as an opening for this business\n\n**RISKS** — any negative signals or headwinds worth flagging`;
+
+    const aiData = await callAI({ model:'gpt-4o-mini', max_tokens:800, system: systemPrompt, messages:[{role:'user',content:userPrompt}] });
+    body.innerHTML = renderAI(aiData.content?.[0]?.text||'') +
+      `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from ${records.length} stored records${pasted?' + pasted content':''}</div>`;
+    if (statusEl) statusEl.innerHTML='<span style="color:var(--teal);">◎ Analysis complete</span>';
+    markDone('press');
+  } catch(e) {
+    body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`;
+    if (statusEl) statusEl.innerHTML='';
+  }
+  btn.disabled=false;
+}
+
+async function runPressReddit() {
+  const btn = document.getElementById('press-reddit-btn');
+  const result = document.getElementById('press-result');
+  const body = document.getElementById('press-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  const biz = document.getElementById('s-biz')?.value.trim()||document.getElementById('cc-client')?.value.trim()||'';
+  const nbhd = document.getElementById('s-nbhd')?.value.trim()||document.getElementById('cc-nbhd')?.value.trim()||'';
+  const query = [biz, nbhd].filter(Boolean).join(' ');
+  if (!query) { body.innerHTML='<span style="color:var(--warn);">Load a client with a business name or neighborhood first.</span>'; btn.disabled=false; return; }
+  body.innerHTML=`<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Scanning Reddit for "${escHtml(query)}"...</span>`;
+  let all=[];
+  for (const sub of ['kansascity','KCFoodScene','kansascitylocal']) all.push(...await redditSearch(query,sub));
+  const seen=new Set();
+  all=all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,10);
+  body.innerHTML = renderRedditPosts(all, `No Reddit posts found for "${escHtml(query)}".`);
+  markDone('press');
+  btn.disabled=false;
+}
+
+// =============================================
+// LAUNCH TIER — MARKET VIABILITY
+// =============================================
+async function runMarketAnalysis() {
+  const btn = document.getElementById('mkt-run-btn');
+  const body = document.getElementById('mkt-result-body');
+  btn.disabled=true;
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const concept = document.getElementById('cc-concept')?.value.trim()||'';
+  const nbhd = document.getElementById('cc-nbhd')?.value||'';
+  if (!concept||!nbhd) { body.innerHTML='<span style="color:var(--warn);">Complete Concept Setup first — need at least the concept description and neighborhood.</span>'; btn.disabled=false; return; }
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:900,
+      system:`You are PresageIQ conducting a pre-launch market viability analysis for a Kansas City business concept. Be direct and honest — a weak market signal is valuable information. Reference neighborhood-specific data where possible. Use ** for bold headers.`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\nAnalyze market viability for this concept. Structure:\n\n**FIT SCORE: X/10** — one sentence verdict\n\n**WHAT THE MARKET SAYS IS WORKING FOR THIS** — demand signals, demographic alignment, neighborhood opportunity\n\n**WHAT WORKS AGAINST IT** — saturation, demographic mismatch, timing, or structural concerns\n\n**NEIGHBORHOOD VERDICT** — is ${nbhd} the right location? If not, name a better KC neighborhood and why\n\n**THE ONE THING THAT DETERMINES SUCCESS HERE** — the single factor that makes or breaks this concept in this market\n\nBe specific to Kansas City. Reference real neighborhood characteristics.`}]
+    });
+    body.innerHTML = renderAI(data.content?.[0]?.text||'');
+    markDone('c-market');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+// =============================================
+// LAUNCH TIER — COMMUNITY INTEL
+// =============================================
+async function runConceptReddit() {
+  const nbhd = document.getElementById('cc-nbhd')?.value||'';
+  const type = document.getElementById('cc-type')?.value||'';
+  const body = document.getElementById('comm-result-body');
+  const result = document.getElementById('comm-result');
+  if (result) result.classList.add('visible');
+  if (!nbhd&&!type) { if(body) body.innerHTML='<span style="color:var(--warn);">Enter neighborhood and business type in Concept Setup first.</span>'; return; }
+  const searchTerm = `${nbhd} ${type.split('—')[0].trim()}`.trim();
+  if (body) body.innerHTML=`<div style="font-size:11px;color:var(--text3);">Scanning Reddit for: "${escHtml(searchTerm)}"...</div>`;
+  let all=[];
+  for (const sub of ['kansascity','KCFoodScene','kansascitylocal']) all.push(...await redditSearch(searchTerm,sub));
+  const seen=new Set();
+  all=all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).sort((a,b)=>b.score-a.score).slice(0,8);
+  if (body) body.innerHTML=renderRedditPosts(all,`No Reddit posts found for "${escHtml(searchTerm)}".`);
+  if (all.length>0) markDone('c-community');
+}
+
+async function runCommunityAnalysis() {
+  const btn = document.getElementById('comm-run-btn');
+  const result = document.getElementById('comm-result');
+  const body = document.getElementById('comm-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const pasted = document.getElementById('cc-community-paste')?.value||'';
+  if (!pasted.trim()) { body.innerHTML='<span style="color:var(--warn);">Paste community content above, or use the Reddit scan button to pull live posts.</span>'; btn.disabled=false; return; }
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:700,
+      system:`You are PresageIQ extracting community intelligence relevant to a pre-launch business concept in Kansas City. Focus on signals that validate or challenge the concept.`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\nCOMMUNITY CONTENT:\n${pasted}\n\nExtract intelligence relevant to this concept. Structure:\n**DEMAND SIGNALS** — evidence locals want something like this\n**CAUTION SIGNALS** — evidence of market resistance, oversaturation, or failed precedents\n**DIRECT QUOTES OF NOTE** — 2-3 specific quotes that capture community sentiment most clearly\n**COMMUNITY VERDICT** — one sentence on what the community data says about this concept's viability`}]
+    });
+    body.innerHTML=renderAI(data.content?.[0]?.text||'');
+    markDone('c-community');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+async function runStoredCommunityAnalysis() {
+  const btn = document.getElementById('comm-db-btn');
+  const result = document.getElementById('comm-result');
+  const body = document.getElementById('comm-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Querying intelligence database...</span>';
+  const nbhd = document.getElementById('cc-nbhd')?.value.trim()||'';
+  const concept = document.getElementById('cc-concept')?.value.trim()||'';
+  const bizType = document.getElementById('cc-type')?.value||'';
+  const params = new URLSearchParams({ limit:50 });
+  if (nbhd) params.set('neighborhood', nbhd);
+  if (bizType) params.set('business_type', bizType.toLowerCase().replace(/[^a-z_]/g,'_'));
+  try {
+    const data = await fetch(`/api/intel/community?${params}`).then(r=>r.json());
+    const records = data.records||[];
+    if (!records.length) {
+      body.innerHTML=`<span style="color:var(--warn);">No stored intelligence found for ${nbhd||'this area'}${bizType?' / '+bizType:''}. Run a collection in the Data Library first, or use Paste Content / Pull Live Reddit instead.</span>`;
+      btn.disabled=false; return;
+    }
+    const context = records.map(r=>`[${r.source.toUpperCase()} · ${(r.neighborhoods||[]).join(', ')||'KC'} · ${r.sentiment||'neutral'}] ${r.title||''}\n${r.body?r.body.substring(0,300):''}`).join('\n\n---\n\n');
+    body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div><span style="font-size:11px;color:var(--text3);margin-left:8px;">Synthesizing '+records.length+' records...</span>';
+    const aiData = await callAI({
+      model:'gpt-4o-mini', max_tokens:900,
+      system:`You are PresageIQ synthesizing stored community intelligence data to evaluate a business concept. The data comes from Reddit posts, news articles, and local community sources — all real KC community signal. Be specific.`,
+      messages:[{role:'user',content:`CONCEPT:\n${concept||'Business concept'}\nNeighborhood: ${nbhd||'Kansas City'}\nType: ${bizType||'Not specified'}\n\nSTORED INTELLIGENCE (${records.length} records):\n\n${context}\n\nSynthesize. Structure:\n\n**DEMAND SIGNALS** — what do locals want or talk positively about in this space?\n\n**CAUTION SIGNALS** — complaints, failures, or resistance patterns?\n\n**NEIGHBORHOOD CONTEXT** — what does the community data say about ${nbhd||'this area'} specifically?\n\n**DIRECT SIGNALS OF NOTE** — 2-3 specific posts that capture sentiment most clearly (paraphrase)\n\n**COMMUNITY VERDICT** — one sentence on viability of this concept here`}]
+    });
+    body.innerHTML=renderAI(aiData.content?.[0]?.text||'') +
+      `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from ${records.length} stored records · ${data.total} total for these filters</div>`;
+    markDone('c-community');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Query failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+// =============================================
+// LAUNCH TIER — FINANCIAL PROJECTION
+// =============================================
+async function runFinancialProjection() {
+  const btn = document.getElementById('fin-run-btn');
+  const result = document.getElementById('fin-result');
+  const body = document.getElementById('fin-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  const extraContext = `Square footage: ${document.getElementById('cf-sqft')?.value||'Unknown'}
+Seats/Capacity: ${document.getElementById('cf-seats')?.value||'Unknown'}
+Operating hours/week: ${document.getElementById('cf-hours')?.value||'Unknown'}
+Known costs: ${document.getElementById('cf-known')?.value||'None provided'}
+Revenue assumptions: ${document.getElementById('cf-revenue')?.value||'None provided'}`;
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:1000,
+      system:`You are PresageIQ generating a financial projection for a pre-launch KC business concept. Be realistic — not pessimistic, not optimistic. Use industry benchmarks for the business type and KC market conditions. Clearly state all assumptions. Use ** for bold headers.
+
+IMPORTANT: At the end of your response, output exactly this format on separate lines:
+STARTUP_LOW: $XXX,XXX
+STARTUP_HIGH: $XXX,XXX
+REVENUE_EST: $XX,XXX/mo
+BREAKEVEN: XX months`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\n${extraContext}\n\nGenerate a full financial projection. Structure:\n\n**STARTUP COST BREAKDOWN**\nItemized estimate — buildout/renovation, equipment, inventory, licenses/permits, deposits, working capital reserve, marketing. Give a realistic range (low/high).\n\n**MONTHLY REVENUE PROJECTION**\nBased on capacity, avg check, realistic covers/transactions per day, and KC market conditions. Show the math.\n\n**MONTHLY OPERATING COSTS**\nRent estimate for neighborhood, labor, COGS, utilities, insurance, misc. Give realistic ranges.\n\n**BREAK-EVEN ANALYSIS**\nMonths to cover monthly operating costs. Months to recoup total startup investment.\n\n**KEY ASSUMPTIONS**\nList the 4-5 most important assumptions.\n\n**FINANCIAL RISK FLAGS**\nThe 2-3 financial scenarios that could break this projection.`}]
+    });
+    let text = data.content?.[0]?.text||'';
+    const startupLow = text.match(/STARTUP_LOW:\s*\$?([\d,]+)/)?.[1];
+    const startupHigh = text.match(/STARTUP_HIGH:\s*\$?([\d,]+)/)?.[1];
+    const revenueEst = text.match(/REVENUE_EST:\s*\$?([\d,]+\/mo)/)?.[1];
+    const breakeven = text.match(/BREAKEVEN:\s*(\d+\s*months?)/i)?.[1];
+    if (startupLow&&startupHigh) {
+      const ps = document.getElementById('proj-startup'); if(ps) ps.textContent=`$${startupLow}–$${startupHigh}`;
+      const pr = document.getElementById('proj-revenue'); if(pr) pr.textContent=revenueEst?`$${revenueEst}`:'—';
+      const pb = document.getElementById('proj-breakeven'); if(pb) pb.textContent=breakeven||'—';
+      const pc = document.getElementById('proj-cards'); if(pc) pc.style.display='grid';
+    }
+    text = text.replace(/STARTUP_LOW:[^\n]*/g,'').replace(/STARTUP_HIGH:[^\n]*/g,'').replace(/REVENUE_EST:[^\n]*/g,'').replace(/BREAKEVEN:[^\n]*/g,'').trim();
+    body.innerHTML=renderAI(text);
+    markDone('c-financials');
+  } catch(e) { body.innerHTML='<span style="color:var(--danger);">Projection failed — try again.</span>'; }
+  btn.disabled=false;
+}
+
+// =============================================
+// LAUNCH TIER — FUNDING PATHWAYS
+// =============================================
+async function runFundingAnalysis() {
+  const btn = document.getElementById('fund-run-btn');
+  const result = document.getElementById('fund-result');
+  const body = document.getElementById('fund-result-body');
+  btn.disabled=true; result.classList.add('visible');
+  body.innerHTML='<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:800,
+      system:`You are PresageIQ identifying funding pathways for a pre-launch KC business. Focus on realistic, accessible options based on the client's profile. Prioritize by likelihood of success. Include veteran-specific resources if applicable. Be specific — name actual programs, not just categories.`,
+      messages:[{role:'user',content:`${getConsultContext()}\n\nIdentify the most relevant funding pathways for this client. Structure:\n\n**BEST FIT — PURSUE FIRST** — the 2-3 most realistic funding sources given their profile, investment range, and business type. Name specific programs.\n\n**VETERAN-SPECIFIC RESOURCES** — if applicable, specific VA, SBA veteran, or Missouri veteran programs they should explore immediately.\n\n**KC-SPECIFIC OPPORTUNITIES** — local KC grants, CDFI loans, neighborhood development funds, or programs specific to their target area.\n\n**REALISTIC FUNDING STACK** — how they might combine multiple sources to reach their startup cost target.\n\n**FIRST THREE CALLS TO MAKE** — the specific organizations to contact this week, in priority order.`}]
+    });
+    body.innerHTML=renderAI(data.content?.[0]?.text||'');
+    markDone('c-funding');
+  } catch(e) { body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
+
+// =============================================
+// MENU UPLOADS (Audit tier)
+// =============================================
+function previewMenuUpload(input) {
+  const container = document.getElementById('menu-upload-preview');
+  if (!container) return;
+  container.innerHTML = '';
+  Array.from(input.files||[]).forEach(file => {
+    const url = URL.createObjectURL(file);
+    container.innerHTML += `<div style="position:relative;width:80px;height:80px;border-radius:4px;overflow:hidden;border:1px solid var(--border2);"><img src="${url}" style="width:100%;height:100%;object-fit:cover;"></div>`;
+  });
+}
+
+async function uploadMenuPhoto() {
+  const fileInput = document.getElementById('menu-upload-file');
+  const labelEl = document.getElementById('menu-upload-label');
+  const statusEl = document.getElementById('menu-upload-status');
+  const btn = document.getElementById('menu-upload-btn');
+  if (!currentClientId) { if(statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Load a client first.</span>'; return; }
+  const files = Array.from(fileInput.files||[]);
+  if (!files.length) { if(statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Select at least one menu photo first.</span>'; return; }
+  btn.disabled=true;
+  const label = labelEl?.value||'Menu';
+  let successCount=0; let allExtractedItems=[];
+  for (let i=0;i<files.length;i++) {
+    const file=files[i];
+    if (statusEl) statusEl.innerHTML=`<span style="color:var(--text3);">Processing ${i+1} of ${files.length}: ${escHtml(file.name)}...</span>`;
+    try {
+      const base64 = await new Promise((resolve,reject)=>{ const reader=new FileReader(); reader.onload=e=>{const r=e.target.result;const c=r.indexOf(',');resolve(c>=0?r.substring(c+1):r);}; reader.onerror=reject; reader.readAsDataURL(file); });
+      const resp = await fetch(`/api/intel/menu-upload/${currentClientId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imageBase64:base64,mimeType:file.type,filename:file.name,label})});
+      const result = await resp.json();
+      if (result.success) { successCount++; if (result.items?.length) allExtractedItems.push(...result.items); }
+    } catch(e) { console.error('Upload error:',e); }
+  }
+  fileInput.value='';
+  const preview=document.getElementById('menu-upload-preview'); if(preview) preview.innerHTML='';
+  btn.disabled=false;
+  if (successCount>0) {
+    let added=0;
+    for (const item of allExtractedItems) {
+      const name=typeof item==='string'?item:(item.name||''); if(!name) continue;
+      const price=(typeof item==='object'&&item.price)?item.price:'';
+      addMenuItem(name,price,'',''); added++;
+    }
+    const itemNote=added>0?` · ${added} item${added!==1?'s':''} added to Menu Items list`:'';
+    if(statusEl) statusEl.innerHTML=`<span style="color:var(--teal);">◎ Uploaded &amp; extracted ${allExtractedItems.length} items from ${successCount} photo${successCount>1?'s':''}${itemNote}. Scroll up to review, then run Menu Analysis.</span>`;
+    await loadMenuUploads();
+  } else {
+    if(statusEl) statusEl.innerHTML='<span style="color:var(--danger);">Upload failed — check connection and try again.</span>';
+  }
+}
+
+async function autoPopulateMenu() {
+  const btn = document.getElementById('menu-auto-btn');
+  const statusEl = document.getElementById('menu-auto-status');
+  if (!currentClientId) { if(statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Load a client first.</span>'; return; }
+  btn.disabled=true;
+  if(statusEl) statusEl.innerHTML='Loading menu data from intel &amp; uploads...';
+  try {
+    const [intelResp,uploadsResp] = await Promise.all([fetch(`/api/intel/business/${currentClientId}`),fetch(`/api/intel/menu-uploads/${currentClientId}`)]);
+    const intel = await intelResp.json();
+    const uploads = uploadsResp.ok ? await uploadsResp.json() : [];
+    const photoSubjects = intel?.ai_photo_subjects||[];
+    const websiteItems = (intel?.status==='complete')?(intel.ai_menu_items||[]):[];
+    const uploadedItems=[];
+    for (const u of (uploads||[])) {
+      for (const item of (u.extracted_items||[])) {
+        const name=typeof item==='string'?item:(item.name||'');
+        const price=(typeof item==='object'&&item.price)?item.price:'';
+        if (name&&!uploadedItems.some(e=>e.name.toLowerCase()===name.toLowerCase())) uploadedItems.push({name,price});
+      }
+    }
+    const allItems=[...uploadedItems];
+    for (const wi of websiteItems) {
+      if (!wi.name) continue;
+      if (!allItems.some(e=>e.name.toLowerCase()===wi.name.toLowerCase())) allItems.push({name:wi.name,price:wi.price||''});
+    }
+    if (!allItems.length&&!photoSubjects.length) { if(statusEl) statusEl.innerHTML='<span style="color:var(--text3);">No items found. Upload menu photos below, then click Auto-populate again.</span>'; btn.disabled=false; return; }
+    if (photoSubjects.length) renderPhotoSubjects(photoSubjects);
+    const photoItemNames=photoSubjects.map(p=>p.item.toLowerCase());
+    let added=0;
+    for (const item of allItems) {
+      const inPhotos=photoItemNames.some(p=>p.includes(item.name.toLowerCase())||item.name.toLowerCase().includes(p));
+      addMenuItem(item.name,item.price||'','',inPhotos?'praised':''); added++;
+    }
+    for (const photo of photoSubjects) {
+      const alreadyAdded=allItems.some(m=>m.name.toLowerCase()===photo.item.toLowerCase());
+      if (!alreadyAdded&&photo.photos>=2) { addMenuItem(photo.item,'','','praised'); added++; }
+    }
+    if(statusEl) statusEl.innerHTML=`<span style="color:var(--teal);">◎ Populated ${added} items. Review list above, fill in missing prices, then run Menu Analysis.</span>`;
+  } catch(e) { if(statusEl) statusEl.innerHTML=`<span style="color:var(--danger);">Failed: ${escHtml(e.message)}</span>`; }
+  btn.disabled=false;
+}
+
+async function loadMenuUploads() {
+  if (!currentClientId) return;
+  try {
+    const resp = await fetch(`/api/intel/menu-uploads/${currentClientId}`);
+    if (!resp.ok) return;
+    renderMenuUploads(await resp.json());
+  } catch(e) {}
+}
+
+function renderMenuUploads(uploads) {
+  const listEl = document.getElementById('menu-uploads-list');
+  const cardsEl = document.getElementById('menu-uploads-cards');
+  if (!listEl||!cardsEl) return;
+  if (!uploads?.length) { listEl.style.display='none'; return; }
+  listEl.style.display='block';
+  const LABEL_COLORS={'Menu':'var(--teal)','Happy Hour':'var(--gold)','Brunch':'#c084fc','Holiday Special':'#f87171','Seasonal':'#fb923c','Drinks':'#60a5fa','Dessert':'#f472b6','Other':'var(--text3)'};
+  cardsEl.innerHTML=uploads.map(u=>{
+    const items=u.extracted_items||[];
+    const labelColor=LABEL_COLORS[u.label]||'var(--text3)';
+    const dateStr=u.uploaded_at?new Date(u.uploaded_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+    const itemPreview=items.slice(0,4).map(i=>escHtml(i.name||i)).join(', ');
+    const moreCount=items.length>4?` +${items.length-4} more`:'';
+    return `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:10px 14px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:10px;font-weight:600;color:${labelColor};text-transform:uppercase;letter-spacing:.5px;">${escHtml(u.label)}</span>
+        <span style="font-size:9px;color:var(--text3);">${escHtml(u.filename||'Menu photo')}</span>
+        <span style="font-size:9px;color:var(--text3);margin-left:auto;">${dateStr}</span>
+        <a href="/api/intel/menu-uploads/${currentClientId}/image/${u.id}" target="_blank" style="font-size:9px;color:var(--teal);text-decoration:none;white-space:nowrap;">↗ View</a>
+      </div>
+      ${items.length?`<div style="font-size:10px;color:var(--text2);"><span style="color:var(--text3);">${items.length} items extracted:</span> ${itemPreview}${moreCount}</div>`:`<div style="font-size:10px;color:var(--text3);font-style:italic;">No items extracted</div>`}
+    </div>`;
+  }).join('');
+}
+
+// =============================================
+// GENERATE BRIEF (tier-aware)
+// =============================================
+async function generateBrief() {
+  const btn = document.getElementById('brief-run-btn');
+  const output = document.getElementById('brief-output');
+  btn.disabled=true;
+  output.innerHTML='<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;padding:20px 0;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Generating report...</div>';
+
+  const tier = currentTier;
+
+  // ── LAUNCH TIER ── generateConsultReport equivalent
+  if (tier==='launch') {
+    const mktFindings = document.getElementById('mkt-result-body')?.innerText||'';
+    const commFindings = document.getElementById('comm-result-body')?.innerText||'';
+    const finFindings = document.getElementById('fin-result-body')?.innerText||'';
+    const fundFindings = document.getElementById('fund-result-body')?.innerText||'';
+    const startupRange = document.getElementById('proj-startup')?.textContent||'—';
+    const revenueEst = document.getElementById('proj-revenue')?.textContent||'—';
+    const breakeven = document.getElementById('proj-breakeven')?.textContent||'—';
+    try {
+      const data = await callAI({
+        model:'gpt-4o-mini', max_tokens:1600,
+        system:`You are PresageIQ writing a Presage Launch Report — a professional pre-launch intelligence report delivered to a client after a full concept analysis session. Write in a clear, authoritative, professional tone. Use ** for bold headers.`,
+        messages:[{role:'user',content:`CLIENT CONTEXT:\n${getConsultContext()}\n\nMARKET VIABILITY FINDINGS:\n${mktFindings||'Not completed'}\n\nCOMMUNITY INTELLIGENCE:\n${commFindings||'Not completed'}\n\nFINANCIAL PROJECTION:\n${finFindings||'Not completed'}\nStartup Range: ${startupRange} | Monthly Revenue Est: ${revenueEst} | Break-Even: ${breakeven}\n\nFUNDING PATHWAYS:\n${fundFindings||'Not completed'}\n\nWrite the Presage Launch Report. Structure:\n\n**PRESAGE LAUNCH REPORT**\n**${document.getElementById('cc-concept')?.value.substring(0,60)||'Business Concept'} · ${document.getElementById('cc-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (3 sentences — viability verdict, biggest opportunity, most critical risk)\n\n**MARKET VIABILITY** (what the data says about this concept in this market)\n\n**WHAT THE COMMUNITY IS TELLING US** (key signals from locals)\n\n**FINANCIAL SNAPSHOT**\n— Startup Cost Range: ${startupRange}\n— Monthly Revenue Estimate: ${revenueEst}\n— Break-Even Timeline: ${breakeven}\n(1 paragraph interpreting what these numbers mean for this client)\n\n**FUNDING PATHWAYS** (top 3 most relevant for this client)\n\n**PRIORITY ACTION PLAN**\n— This Week\n— Next 30 Days\n— 60-90 Days\n\n**CLOSING ASSESSMENT** (honest, direct, encouraging — acknowledge the risk, affirm the opportunity if it's real)\n\nThis is a $500 deliverable. Write accordingly.`}]
+      });
+      output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      markDone('brief');
+    } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Report generation failed — ${e.message}</span>`; }
+    btn.disabled=false; return;
+  }
+
+  // ── RETAINER TIER ── Monthly Brief
+  if (tier==='retainer') {
+    const pressFindings = document.getElementById('press-result-body')?.innerText||'';
+    try {
+      const data = await callAI({
+        model:'gpt-4o-mini', max_tokens:1200,
+        system:`You are PresageIQ writing a Monthly Retainer Brief for an existing KC business client. Be direct, specific, and actionable. Reference any findings from this session. Use ** for bold headers.`,
+        messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nTREND ANALYSIS / PRESS FINDINGS:\n${pressFindings||'Not completed this session'}\n\nWrite the Monthly Retainer Brief. Structure:\n\n**MONTHLY RETAINER BRIEF**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})} · Towns & Walley Intelligence**\n\n**THIS MONTH'S SUMMARY** (2-3 sentences on the state of the business and market this month)\n\n**WHAT'S CHANGED** (new signals, shifts, or developments from the intelligence data)\n\n**TRENDS TO WATCH** (2-3 forward-looking signals worth tracking)\n\n**PRIORITY ACTIONS THIS MONTH** (3-5 specific, actionable recommendations)\n\n**NEXT MONTH FOCUS** (what we should investigate or address in the next session)\n\nKeep it concise and actionable — this is a monthly check-in, not a full audit.`}]
+      });
+      output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      markDone('brief');
+    } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
+    btn.disabled=false; return;
+  }
+
+  // ── CONSULT TIER ── Consult Brief
+  if (tier==='consult') {
+    const reviewFindings = document.getElementById('review-result-body')?.innerText||'';
+    const compFindings = document.getElementById('comp-result-body')?.innerText||'';
+    const pressFindings = document.getElementById('press-result-body')?.innerText||'';
+    try {
+      const data = await callAI({
+        model:'gpt-4o-mini', max_tokens:1400,
+        system:`You are PresageIQ writing a Presage Consult Brief — a professional intelligence report delivered after a consult session. Write in a clear, authoritative tone. This goes directly to the client. Use ** for bold headers.`,
+        messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nREVIEW SIGNALS:\n${reviewFindings||'Not completed'}\n\nCOMPETITOR INTEL:\n${compFindings||'Not completed'}\n\nKC PRESS / COMMUNITY:\n${pressFindings||'Not completed'}\n\nWrite the Presage Consult Brief. Structure:\n\n**PRESAGE CONSULT BRIEF**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${document.getElementById('s-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — overall assessment and single highest-priority recommendation)\n\n**WHAT'S WORKING** (strengths drawn from review and intel data)\n\n**WHAT NEEDS TO CHANGE** (specific problems, prioritized by impact)\n\n**COMPETITIVE POSITIONING** (how to stand out given the competitor landscape)\n\n**WHAT THE COMMUNITY IS SAYING** (if press/community data was gathered)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n\n**CLOSING NOTE** (one paragraph of honest, direct guidance)\n\nBe specific. Reference actual data. This is a $250 deliverable — write accordingly.`}]
+      });
+      output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      markDone('brief');
+    } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
+    btn.disabled=false; return;
+  }
+
+  // ── AUDIT TIER (default) ── Executive Brief Extended
+  const menuResult = document.getElementById('menu-result-body')?.innerText||'';
+  const invResult = document.getElementById('inv-result-body')?.innerText||'';
+  let aiProfile = document.getElementById('review-result-body')?.innerText||'';
+  let aiCompetitors = document.getElementById('comp-result-body')?.innerText||'';
+  let placeData = null; let menuText = '';
+  if (currentClientId) {
+    try {
+      const intelResp = await fetch(`/api/intel/business/${currentClientId}`);
+      const intel = await intelResp.json();
+      if (intel?.status==='complete') {
+        if (intel.ai_profile) aiProfile=intel.ai_profile;
+        if (intel.ai_competitors) aiCompetitors=intel.ai_competitors;
+        placeData=intel.place_data;
+        menuText=(intel.website_data?.menuText||intel.website_data?.homeText||'');
+        if (!moduleDone.reviews||!moduleDone.competitors) silentlyPopulateIntel(intel);
+      }
+    } catch(e) {}
+  }
+  output.innerHTML='<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;padding:20px 0;"><div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Generating Presage Brief Extended...</div>';
+  const placeContext = placeData ? `Google Maps Data: ${placeData.rating||'N/A'}★ rating, ${placeData.userRatingCount||0} reviews, Price: ${placeData.priceLevel||'unknown'}, Website: ${placeData.websiteUri?'Yes':'None'}` : '';
+  const menuContext = menuText ? `\n\nMENU / WEBSITE CONTENT (scraped):\n${menuText.substring(0,1200)}` : '';
+  try {
+    const data = await callAI({
+      model:'gpt-4o-mini', max_tokens:1800,
+      system:`You are PresageIQ writing a Presage Brief Extended — a professional business intelligence report delivered to a client after a full audit engagement. Write in a clear, authoritative, professional tone. This document will be sent directly to the client. Use ** for bold headers. When Google Maps data or website content is provided, reference it specifically — cite actual ratings, review counts, menu items. Do NOT write generic placeholder text.`,
+      messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n${placeContext}\n\nREVIEW & REPUTATION INTELLIGENCE:\n${aiProfile||'Not yet gathered'}\n\nMENU ANALYSIS:\n${menuResult||'Not manually entered'}${menuContext}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR INTELLIGENCE:\n${aiCompetitors||'Not yet gathered'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${document.getElementById('s-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the actual state of this business based on the data above, and the single most critical action)\n\n**WHAT'S WORKING** (specific strengths from the data — reference actual ratings, specific review themes, menu items praised)\n\n**WHAT NEEDS TO CHANGE** (specific problems from the data, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (if menu data exists, reference specific items by name)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out vs. the identified competitors)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement)\n\nBe specific. Reference actual data. This is a $2,500 deliverable — write accordingly. If data for a section is genuinely absent, say so briefly and move on — do not pad with generic advice.`}]
+    });
+    output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+    markDone('brief');
+  } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
+  btn.disabled=false;
+}
 function copyBrief() { const t = document.getElementById('brief-output')?.innerText; if (t && !t.includes('Complete the session')) navigator.clipboard.writeText(t).then(() => alert('Copied.')); else alert('Generate the report first.'); }
 
 // =============================================
