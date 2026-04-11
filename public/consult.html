@@ -75,6 +75,47 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .load-btn:hover{background:rgba(200,150,62,.18);}
 .status-select{background:var(--bg4);border:1px solid var(--border2);color:var(--text2);padding:5px 8px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;appearance:none;}
 
+/* SESSION VIEW LAYOUT */
+#session-view{display:none;flex:1;overflow:hidden;flex-direction:row;}
+#session-view.active{display:flex;}
+.sidebar{width:210px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--border);}
+.sidebar-head-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);}
+.sidebar-client{font-size:12px;color:var(--text);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;}
+.module-nav{padding:8px;flex:1;overflow-y:auto;}
+.mnav-item{padding:9px 10px;border-radius:4px;cursor:pointer;transition:all .2s;border:1px solid transparent;margin-bottom:2px;display:flex;align-items:center;gap:8px;}
+.mnav-item:hover{background:var(--bg3);}
+.mnav-item.active{background:rgba(200,150,62,.07);border-color:rgba(200,150,62,.2);}
+.mnav-icon{font-size:12px;flex-shrink:0;width:16px;}
+.mnav-label{font-size:11px;color:var(--text2);}
+.mnav-item.active .mnav-label{color:var(--gold);}
+.mnav-check{margin-left:auto;font-size:9px;color:var(--teal);opacity:0;}
+.mnav-item.done .mnav-check{opacity:1;}
+.sidebar-footer{padding:12px;border-top:1px solid var(--border);flex-shrink:0;}
+.progress-label{font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.progress-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--teal));border-radius:2px;transition:width .4s ease;}
+.progress-pct{font-size:10px;color:var(--text2);margin-top:5px;}
+/* PANELS */
+.content-area{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
+.panel{display:none;flex:1;flex-direction:column;}
+.panel.active{display:flex;}
+.panel-head{padding:20px 24px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);}
+.panel-title{font-family:var(--font-display);font-size:18px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px;}
+.panel-desc{font-size:11px;color:var(--text2);line-height:1.5;}
+.panel-body{padding:20px 24px;flex:1;overflow-y:auto;}
+/* SHARED FORM (panel body) */
+.run-btn{background:var(--gold);border:none;color:#080b10;padding:8px 18px;border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:opacity .2s;display:inline-flex;align-items:center;gap:6px;}
+.run-btn:hover{opacity:.85;}
+.run-btn:disabled{opacity:.4;cursor:not-allowed;}
+.run-btn.teal{background:var(--teal);}
+.run-btn.purple{background:var(--purple);}
+.run-btn.muted{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:var(--text3);}
+.ai-result{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:16px;margin-top:16px;font-size:12px;color:var(--text2);line-height:1.75;display:none;}
+.ai-result.visible{display:block;}
+.ai-result-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+.ai-result-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);}
+.ai-result strong{color:var(--text);}
 /* TYPING */
 @keyframes typing{0%,100%{opacity:.3;}50%{opacity:1;}}
 .dot-t{width:4px;height:4px;border-radius:50%;background:var(--gold);animation:typing .8s infinite;display:inline-block;}
@@ -161,6 +202,477 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   </div>
   <div class="queue-list" id="queue-list"></div>
 </div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- STATE 2: SESSION VIEW                       -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="session-view">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-head-label">Session</div>
+      <div class="sidebar-client" id="sb-client-name">—</div>
+    </div>
+    <div class="module-nav" id="module-nav">
+      <!-- Rendered by renderSidebar() -->
+    </div>
+    <div class="sidebar-footer">
+      <div class="progress-label">Progress</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <div class="progress-pct" id="progress-pct">0 / 0 modules</div>
+    </div>
+  </div>
+
+  <!-- PANELS -->
+  <div class="content-area">
+
+    <!-- ── CLIENT SETUP (Consult / Audit / Retainer) ── -->
+    <div class="panel" id="panel-setup">
+      <div class="panel-head">
+        <div class="panel-title">Client Setup</div>
+        <div class="panel-desc">Enter business details before starting. This context loads into every AI analysis in this session.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Client Information</div>
+          <div class="field-row">
+            <div class="field"><label>Client Name</label><input class="fi" id="s-client" placeholder="Full name or business contact"/></div>
+            <div class="field"><label>Business Name</label><input class="fi" id="s-biz" placeholder="Restaurant / business name"/></div>
+          </div>
+          <div class="field-row three">
+            <div class="field"><label>Business Type</label>
+              <select class="fs" id="s-type">
+                <option value="">— Select —</option>
+                <option>Restaurant / Food &amp; Beverage</option>
+                <option>Retail</option>
+                <option>Service Business</option>
+                <option>Bar / Nightlife</option>
+                <option>Café / Coffee</option>
+                <option>Food Truck / Pop-Up</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Neighborhood</label>
+              <select class="fs" id="s-nbhd">
+                <option value="">— Select —</option>
+                <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+                <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+                <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+                <option>Grandview</option><option>East Side / Prospect</option>
+                <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+                <option>North KC</option><option>Gladstone</option><option>Independence</option>
+                <option>Lee's Summit</option><option>Overland Park</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Years in Business</label><input class="fi" id="s-years" placeholder="e.g. 3"/></div>
+          </div>
+          <div class="field-row three">
+            <div class="field"><label>Est. Annual Revenue</label><input class="fi" id="s-revenue" placeholder="e.g. $400,000"/></div>
+            <div class="field"><label>Avg Check / Transaction</label><input class="fi" id="s-check" placeholder="e.g. $22"/></div>
+            <div class="field"><label>Seating / Sq Ft</label><input class="fi" id="s-size" placeholder="e.g. 65 seats"/></div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Client's Stated Challenge</div>
+          <div class="field-row one">
+            <div class="field"><label>What problem are they trying to solve?</label>
+              <textarea class="fta" id="s-challenge" placeholder="What did they tell you when they reached out? What are they struggling with?"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Pre-Session Notes</div>
+          <div class="field-row one">
+            <div class="field"><label>Additional context before the session</label>
+              <textarea class="fta" id="s-notes" placeholder="Pre-call notes, files received, first impressions..."></textarea>
+            </div>
+          </div>
+        </div>
+        <button class="run-btn" onclick="markDone('setup');advancePanel()">Save &amp; Continue &#8594;</button>
+      </div>
+    </div>
+
+    <!-- ── CONCEPT SETUP (Launch) ── -->
+    <div class="panel" id="panel-c-concept">
+      <div class="panel-head">
+        <div class="panel-title">Concept Setup</div>
+        <div class="panel-desc">Capture the client's business idea before testing it against market data. The more detail here, the sharper the analysis.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Client Information</div>
+          <div class="field-row">
+            <div class="field"><label>Client Name</label><input class="fi" id="cc-client" placeholder="Full name"/></div>
+            <div class="field"><label>Email</label><input class="fi" id="cc-email" placeholder="client@email.com"/></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Background</label>
+              <select class="fs" id="cc-background">
+                <option value="">— Select —</option>
+                <option>First-time entrepreneur</option>
+                <option>Industry experience, first business</option>
+                <option>Serial entrepreneur</option>
+                <option>Military veteran</option>
+                <option>Recent graduate</option>
+                <option>Career changer</option>
+              </select>
+            </div>
+            <div class="field"><label>Investment Range</label>
+              <select class="fs" id="cc-investment">
+                <option value="">— Select —</option>
+                <option>Under $25,000</option>
+                <option>$25,000 – $50,000</option>
+                <option>$50,000 – $100,000</option>
+                <option>$100,000 – $250,000</option>
+                <option>$250,000+</option>
+                <option>Seeking funding — minimal personal capital</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">The Concept</div>
+          <div class="field-row three">
+            <div class="field"><label>Business Type</label>
+              <select class="fs" id="cc-type">
+                <option value="">— Select —</option>
+                <option>Restaurant / Food &amp; Beverage</option>
+                <option>Retail — Clothing / Apparel</option>
+                <option>Retail — Specialty / Boutique</option>
+                <option>Café / Coffee Shop</option>
+                <option>Bar / Taproom</option>
+                <option>Food Truck / Pop-Up</option>
+                <option>Service Business</option>
+                <option>Health / Wellness</option>
+                <option>Fitness / Studio</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Target Neighborhood</label>
+              <select class="fs" id="cc-nbhd">
+                <option value="">— Select —</option>
+                <option>Waldo</option><option>Crossroads Arts District</option><option>Brookside</option>
+                <option>Westport</option><option>River Market</option><option>Plaza / Midtown</option>
+                <option>Hyde Park</option><option>Volker</option><option>Martin City</option>
+                <option>Grandview</option><option>East Side / Prospect</option>
+                <option>KCK / Wyandotte County</option><option>Argentine / Rosedale</option>
+                <option>North KC</option><option>Gladstone</option><option>Independence</option>
+                <option>Lee's Summit</option><option>Overland Park</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Target Avg Transaction</label><input class="fi" id="cc-check" placeholder="e.g. $18"/></div>
+          </div>
+          <div class="field-row one">
+            <div class="field"><label>Describe the concept in detail</label>
+              <textarea class="fta" id="cc-concept" placeholder="What is the business? What makes it unique? Who is the target customer?" style="min-height:90px;"></textarea>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Why this neighborhood?</label><textarea class="fta" id="cc-why" placeholder="Personal connection, spotted a gap, foot traffic..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Biggest concern?</label><textarea class="fta" id="cc-concern" placeholder="Competition, capital, experience, location..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+        <button class="run-btn" onclick="markDone('c-concept');advancePanel()">Save &amp; Continue &#8594;</button>
+      </div>
+    </div>
+
+    <!-- ── REVIEW SIGNALS (Consult / Audit / Retainer) ── -->
+    <div class="panel" id="panel-reviews">
+      <div class="panel-head">
+        <div class="panel-title" id="reviews-title">Review &amp; Reputation Signals</div>
+        <div class="panel-desc" id="reviews-desc">Auto-gathered from Google Maps and community sources when a client is loaded. Intelligence triggers automatically on session start.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;" id="reviews-btn-row">
+          <button class="run-btn purple" id="review-intel-btn" onclick="loadReviewIntel()">◎ Load Business Intelligence</button>
+          <button class="run-btn muted" onclick="skipModule('reviews','N/A')">N/A</button>
+        </div>
+        <div id="review-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;min-height:16px;"></div>
+        <div id="biz-profile-card" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:16px 18px;margin-bottom:16px;">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Rating</div><div id="bip-rating" style="font-size:18px;color:var(--gold);font-weight:600;">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Price</div><div id="bip-price" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Category</div><div id="bip-type" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Reviews</div><div id="bip-count" style="font-size:13px;color:var(--text2);">—</div></div>
+            <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Website</div><div id="bip-web" style="font-size:13px;color:var(--text2);">—</div></div>
+          </div>
+          <div id="bip-attrs" style="font-size:10px;color:var(--text3);display:flex;gap:10px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--border);"></div>
+          <div id="bip-overview" style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.6;font-style:italic;"></div>
+        </div>
+        <div class="ai-result" id="review-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Review &amp; Reputation Intelligence — PresageIQ</span></div>
+          <div id="review-result-body"></div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Supplementary Notes</div>
+          <textarea class="fta" id="r-notes" placeholder="Add any additional context — staff observations, owner-provided info, in-session notes..." style="min-height:60px;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COMPETITOR INTEL (Consult / Audit) ── -->
+    <div class="panel" id="panel-competitors">
+      <div class="panel-head">
+        <div class="panel-title">Competitor Gap Analysis</div>
+        <div class="panel-desc">Auto-gathered from Google Maps — all eateries within 5 miles, ratings, and AI gap analysis. Triggered automatically on session load.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="comp-intel-btn" onclick="loadCompetitorIntel()">◎ Load Competitor Intelligence</button>
+          <button class="run-btn muted" onclick="skipModule('competitors','N/A')">N/A</button>
+        </div>
+        <div id="comp-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;min-height:16px;"></div>
+        <div id="comp-list-auto" style="display:none;margin-bottom:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Nearby Competitors</div>
+          <div id="comp-list-cards" style="display:flex;flex-direction:column;gap:4px;"></div>
+        </div>
+        <div class="ai-result" id="comp-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Competitor Gap Analysis — PresageIQ</span></div>
+          <div id="comp-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MENU ANALYSIS (Audit only) ── -->
+    <div class="panel" id="panel-menu">
+      <div class="panel-head">
+        <div class="panel-title">Menu &amp; Product Analysis</div>
+        <div class="panel-desc">Upload menu photos for vision AI extraction, enter items manually, and run AI analysis to score items and surface opportunities.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Menu Items</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:6px;padding:0 4px;">
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;">Item Name</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Price</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Sales Vol</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Mentions</span>
+            <span></span>
+          </div>
+          <div id="menu-items-list"></div>
+          <button class="run-btn muted" style="margin-top:6px;" onclick="addMenuItem()">+ Add Item</button>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Menu Upload — Vision AI Extraction</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">
+            <div class="field" style="flex:1;min-width:160px;">
+              <label>Menu Type</label>
+              <select id="menu-upload-label" class="fs">
+                <option value="Menu">Main Menu</option>
+                <option value="Happy Hour">Happy Hour</option>
+                <option value="Brunch">Brunch</option>
+                <option value="Seasonal">Seasonal / Special</option>
+                <option value="Drinks">Drink Menu</option>
+                <option value="Dessert">Dessert Menu</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="field" style="flex:2;min-width:180px;">
+              <label>Photo File(s)</label>
+              <input type="file" id="menu-upload-file" accept="image/*" multiple class="fi" style="padding:5px 10px;" onchange="previewMenuUpload(this)">
+            </div>
+            <button class="run-btn purple" id="menu-upload-btn" onclick="uploadMenuPhoto()">⬆ Extract &amp; Save</button>
+          </div>
+          <div id="menu-upload-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;"></div>
+          <div id="menu-upload-status" style="font-size:11px;color:var(--text3);min-height:14px;margin-bottom:8px;"></div>
+          <div id="menu-uploads-list" style="display:none;">
+            <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Saved Menus</div>
+            <div id="menu-uploads-cards" style="display:flex;flex-direction:column;gap:6px;"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="run-btn" id="menu-run-btn" onclick="analyzeMenu()">◎ Run Menu Analysis</button>
+          <button class="run-btn muted" onclick="skipModule('menu','N/A')">N/A</button>
+          <button class="run-btn muted" onclick="skipModule('menu','TBD')">TBD</button>
+        </div>
+        <div class="ai-result" id="menu-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Menu Analysis — PresageIQ</span></div>
+          <div id="menu-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INVENTORY & SUPPLY (Audit only) ── -->
+    <div class="panel" id="panel-inventory">
+      <div class="panel-head">
+        <div class="panel-title">Inventory &amp; Supply Chain</div>
+        <div class="panel-desc">Document current vendors and sourcing. PresageIQ identifies consolidation opportunities, pricing issues, and KC-local alternatives.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Current Vendors</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:6px;padding:0 4px;">
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;">Vendor / Supplier</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Category</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Est. Mo $</span>
+            <span style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;text-align:center;">Local?</span>
+            <span></span>
+          </div>
+          <div id="vendor-list"></div>
+          <button class="run-btn muted" style="margin-top:6px;" onclick="addVendor()">+ Add Vendor</button>
+        </div>
+        <div class="field-group">
+          <div class="field-group-title">Supply Chain Context</div>
+          <div class="field-row">
+            <div class="field"><label>Known sourcing problems</label><textarea class="fta" id="inv-problems" placeholder="Late deliveries, quality issues, price increases..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Items they wish they could source better</label><textarea class="fta" id="inv-wish" placeholder="Produce quality, specific proteins, local options..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="run-btn" id="inv-run-btn" onclick="analyzeInventory()">◎ Analyze Supply Chain</button>
+          <button class="run-btn muted" onclick="skipModule('inventory','N/A')">N/A</button>
+          <button class="run-btn muted" onclick="skipModule('inventory','TBD')">TBD</button>
+        </div>
+        <div class="ai-result" id="inv-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Supply Chain Analysis — PresageIQ</span></div>
+          <div id="inv-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KC PRESS COVERAGE / COMMUNITY (Consult/Audit/Retainer) ── -->
+    <div class="panel" id="panel-press">
+      <div class="panel-head">
+        <div class="panel-title" id="press-title">KC Press &amp; Community Coverage</div>
+        <div class="panel-desc" id="press-desc">Pull recent news articles, Reddit mentions, and community signals about this business and neighborhood from the intelligence database.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="press-db-btn" onclick="runPressAnalysis()">◎ Query Intelligence Database</button>
+          <button class="run-btn teal" id="press-reddit-btn" onclick="runPressReddit()">◎ Pull Live Reddit</button>
+          <button class="run-btn muted" onclick="skipModule('press','N/A')">N/A</button>
+        </div>
+        <div id="press-status" style="font-size:11px;color:var(--text3);min-height:14px;margin-bottom:10px;"></div>
+        <div class="ai-result" id="press-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Press &amp; Community Intelligence — PresageIQ</span></div>
+          <div id="press-result-body"></div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Paste Additional Sources (Optional)</div>
+          <textarea class="fta" id="press-paste" placeholder="Paste any news articles, reviews, or community content about this business or neighborhood..." style="min-height:80px;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MARKET VIABILITY (Launch) ── -->
+    <div class="panel" id="panel-c-market">
+      <div class="panel-head">
+        <div class="panel-title">Market Viability</div>
+        <div class="panel-desc">Tests the concept against PresageIQ neighborhood data — demand signals, saturation, demographic fit, and opportunity score.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+          <button class="run-btn" id="mkt-run-btn" onclick="runMarketAnalysis()">◎ Run Market Analysis</button>
+          <button class="run-btn teal" id="mkt-reddit-btn" onclick="runConceptReddit()">◎ Scan Community for Concept Signals</button>
+        </div>
+        <div class="ai-result visible" id="mkt-result" style="display:block;min-height:60px;">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Market Viability — PresageIQ</span></div>
+          <div id="mkt-result-body" style="font-size:11px;color:var(--text3);">Complete Concept Setup first, then run analysis.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COMMUNITY INTEL (Launch) ── -->
+    <div class="panel" id="panel-c-community">
+      <div class="panel-head">
+        <div class="panel-title">Community Intelligence</div>
+        <div class="panel-desc">What locals are actually saying about concepts like this — pulled from Reddit, reviews, and KC community sources.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Paste Additional Sources (Optional)</div>
+          <div class="field-row one">
+            <div class="field"><label>Reviews, social posts, or community content about similar businesses</label>
+              <textarea class="fta" id="cc-community-paste" placeholder="Paste Yelp reviews of similar businesses, Reddit threads, competitor Google reviews..." style="min-height:90px;"></textarea>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="comm-db-btn" onclick="runStoredCommunityAnalysis()">◎ Query Intel Database</button>
+          <button class="run-btn" id="comm-run-btn" onclick="runCommunityAnalysis()">◎ Analyze Pasted Content</button>
+          <button class="run-btn teal" id="comm-reddit-btn" onclick="runConceptReddit()">◎ Pull Live Reddit</button>
+        </div>
+        <div class="ai-result" id="comm-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Community Intelligence — PresageIQ</span></div>
+          <div id="comm-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FINANCIAL PROJECTION (Launch) ── -->
+    <div class="panel" id="panel-c-financials">
+      <div class="panel-head">
+        <div class="panel-title">Financial Projection</div>
+        <div class="panel-desc">Startup cost range, monthly revenue estimate, break-even timeline based on concept and neighborhood data.</div>
+      </div>
+      <div class="panel-body">
+        <div class="field-group">
+          <div class="field-group-title">Additional Context</div>
+          <div class="field-row three">
+            <div class="field"><label>Est. Sq Footage</label><input class="fi" id="cf-sqft" placeholder="e.g. 1,200 sq ft"/></div>
+            <div class="field"><label>Seats / Capacity</label><input class="fi" id="cf-seats" placeholder="e.g. 45 seats"/></div>
+            <div class="field"><label>Hours / Week</label><input class="fi" id="cf-hours" placeholder="e.g. 60 hrs/week"/></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Known costs or commitments</label><textarea class="fta" id="cf-known" placeholder="Equipment quotes, lease discussions, licensing fees..." style="min-height:60px;"></textarea></div>
+            <div class="field"><label>Revenue assumptions</label><textarea class="fta" id="cf-revenue" placeholder="Any estimates they've done, comparable business research..." style="min-height:60px;"></textarea></div>
+          </div>
+        </div>
+        <button class="run-btn purple" id="fin-run-btn" onclick="runFinancialProjection()">◎ Generate Full Projection</button>
+        <div id="proj-cards" style="display:none;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0;">
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px;"><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Startup Cost Range</div><div id="proj-startup" style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold);">—</div></div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px;"><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Monthly Revenue Est.</div><div id="proj-revenue" style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold);">—</div></div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:14px;"><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Break-Even Timeline</div><div id="proj-breakeven" style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold);">—</div></div>
+        </div>
+        <div class="ai-result" id="fin-result">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Financial Projection — PresageIQ</span></div>
+          <div id="fin-result-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FUNDING PATHWAYS (Launch) ── -->
+    <div class="panel" id="panel-c-funding">
+      <div class="panel-head">
+        <div class="panel-title">Funding Pathways</div>
+        <div class="panel-desc">Relevant funding sources, grants, and resources based on the client's profile — veteran status, KC location, business type, and capital gap.</div>
+      </div>
+      <div class="panel-body">
+        <button class="run-btn" id="fund-run-btn" onclick="runFundingAnalysis()">◎ Identify Funding Pathways</button>
+        <div class="ai-result" id="fund-result" style="margin-top:16px;">
+          <div class="ai-result-header"><span class="ai-result-label">◎ Funding Pathways — PresageIQ</span></div>
+          <div id="fund-result-body" style="font-size:11px;color:var(--text3);">Complete Concept Setup first, then run analysis.</div>
+        </div>
+        <div style="margin-top:20px;">
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);">KC Resources Always Worth Mentioning</div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:12px 14px;margin-bottom:8px;"><div style="font-size:12px;color:var(--text);margin-bottom:3px;font-weight:500;">UMKC Regnier Institute</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">Entrepreneurship resources, pitch competitions, mentorship.</div></div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:12px 14px;margin-bottom:8px;"><div style="font-size:12px;color:var(--text);margin-bottom:3px;font-weight:500;">KC Small Business Administration (SBA)</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">SBA 7(a) loans, microloans, and counseling. First stop for any small business.</div></div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:12px 14px;margin-bottom:8px;"><div style="font-size:12px;color:var(--text);margin-bottom:3px;font-weight:500;">Kauffman Foundation — KC</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">KC-based entrepreneurship foundation. Grants, programs, ecosystem connections.</div></div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:12px 14px;"><div style="font-size:12px;color:var(--text);margin-bottom:3px;font-weight:500;">Missouri Veteran Commission — SELF Program</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">Self-Employment for Low-Income Individuals — veteran track with business support.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BRIEF / REPORT (all tiers — title/desc set dynamically) ── -->
+    <div class="panel" id="panel-brief">
+      <div class="panel-head">
+        <div class="panel-title" id="brief-title">Presage Brief</div>
+        <div class="panel-desc" id="brief-desc">Generate the full written report. Synthesizes all module findings into a structured deliverable ready to send to the client.</div>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+          <button class="run-btn purple" id="brief-run-btn" onclick="generateBrief()">◎ Generate Report</button>
+          <button class="run-btn muted" onclick="copyBrief()">Copy to Clipboard</button>
+        </div>
+        <div id="brief-output">
+          <div style="font-size:11px;color:var(--text3);padding:20px 0;line-height:1.8;">Complete the session modules first, then generate the report.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end content-area -->
+</div><!-- end session-view -->
 
 <!-- ═══════════════════════════════════════════ -->
 <!-- NEW SESSION MODAL                           -->
@@ -370,32 +882,480 @@ async function updateClientStatus(id, status) {
 }
 
 // =============================================
-// SESSION (stub — wired in Commit 2)
+// TIER MODULE CONFIG
 // =============================================
+const TIER_MODULES = {
+  launch: [
+    { id:'c-concept',   icon:'◎', label:'Concept Setup' },
+    { id:'c-market',    icon:'◉', label:'Market Viability' },
+    { id:'c-community', icon:'▤', label:'Community Intel' },
+    { id:'c-financials',icon:'▦', label:'Financial Projection' },
+    { id:'c-funding',   icon:'◈', label:'Funding Pathways' },
+    { id:'brief',       icon:'▸', label:'Launch Report' },
+  ],
+  consult: [
+    { id:'setup',       icon:'◎', label:'Client Setup' },
+    { id:'reviews',     icon:'◉', label:'Review Signals' },
+    { id:'competitors', icon:'▤', label:'Competitor Intel' },
+    { id:'press',       icon:'◈', label:'KC Press Coverage' },
+    { id:'brief',       icon:'▸', label:'Consult Brief' },
+  ],
+  audit: [
+    { id:'setup',       icon:'◎', label:'Client Setup' },
+    { id:'reviews',     icon:'◉', label:'Review Signals' },
+    { id:'competitors', icon:'▤', label:'Competitor Intel' },
+    { id:'menu',        icon:'▤', label:'Menu Analysis' },
+    { id:'inventory',   icon:'▥', label:'Inventory & Supply' },
+    { id:'press',       icon:'◈', label:'KC Press Coverage' },
+    { id:'brief',       icon:'▸', label:'Executive Brief' },
+  ],
+  retainer: [
+    { id:'setup',       icon:'◎', label:'Client Setup' },
+    { id:'reviews',     icon:'◉', label:'Monthly Signals' },
+    { id:'press',       icon:'▤', label:'Trend Analysis' },
+    { id:'brief',       icon:'▸', label:'Monthly Brief' },
+  ],
+};
+
+// =============================================
+// SESSION STATE
+// =============================================
+let currentClientId = null;
+let currentTier = 'consult';
+let currentClient = null;
+let moduleDone = {};
+let intelPollTimer = null;
+
 function enterSession(clientId) {
   const cl = allClients.find(c => c.id === clientId);
   if (!cl) return;
-  // Session view will be added in Commit 2
-  // For now, show a temporary indicator
+  currentClient = cl;
+  currentClientId = cl.id;
+  currentTier = tierFromService(cl.service);
+  moduleDone = {};
+
+  // Update topbar
   const pill = document.getElementById('topbar-client-name');
   const badge = document.getElementById('topbar-tier-badge');
   const sep = document.getElementById('topbar-sep2');
-  const backBtn = document.getElementById('back-to-queue-btn');
   pill.textContent = cl.bizname || cl.name;
   badge.textContent = tierLabel(cl.service);
   badge.className = 'tier-badge ' + tierClass(cl.service);
   pill.style.display = '';
   badge.style.display = '';
   sep.style.display = '';
-  backBtn.style.display = '';
+  document.getElementById('back-to-queue-btn').style.display = '';
+
+  // Sidebar client name
+  document.getElementById('sb-client-name').textContent = cl.bizname || cl.name;
+
+  // Customise panel titles/descs by tier
+  applyTierLabels();
+
+  // Build sidebar and show first panel
+  renderSidebar();
+  const firstModule = TIER_MODULES[currentTier][0];
+  showPanel(firstModule.id);
+
+  // Pre-populate setup fields from client record
+  populateSetupFields(cl);
+
+  // Switch views
+  document.getElementById('queue-view').style.display = 'none';
+  document.getElementById('session-view').classList.add('active');
+
+  // Auto-trigger intel for tiers that need it
+  if (['consult','audit','retainer'].includes(currentTier)) {
+    autoTriggerIntel(currentClientId);
+  }
+
+  // Mark client active
+  updateClientStatus(clientId, 'active');
 }
 
 function exitSession() {
+  clearInterval(intelPollTimer);
+  intelPollTimer = null;
+
+  // Hide session topbar extras
   document.getElementById('topbar-client-name').style.display = 'none';
   document.getElementById('topbar-tier-badge').style.display = 'none';
   document.getElementById('topbar-sep2').style.display = 'none';
   document.getElementById('back-to-queue-btn').style.display = 'none';
+
+  // Reset state
+  currentClientId = null;
+  currentClient = null;
+  moduleDone = {};
+
+  document.getElementById('session-view').classList.remove('active');
+  document.getElementById('queue-view').style.display = '';
+  loadClientQueue();
 }
+
+function applyTierLabels() {
+  const tier = currentTier;
+  // Reviews panel
+  const revTitle = document.getElementById('reviews-title');
+  const revDesc  = document.getElementById('reviews-desc');
+  if (tier === 'retainer') {
+    if (revTitle) revTitle.textContent = 'Monthly Signals';
+    if (revDesc)  revDesc.textContent = 'Latest Reddit, GDELT, and Foursquare pulls for this client\'s neighborhood and business type.';
+  } else {
+    if (revTitle) revTitle.textContent = 'Review & Reputation Signals';
+    if (revDesc)  revDesc.textContent = 'Auto-gathered from Google Maps and community sources when a client is loaded.';
+  }
+  // Press panel
+  const pressTitle = document.getElementById('press-title');
+  const pressDesc  = document.getElementById('press-desc');
+  if (tier === 'retainer') {
+    if (pressTitle) pressTitle.textContent = 'Trend Analysis';
+    if (pressDesc)  pressDesc.textContent = 'What\'s changed this month — pull and compare community signals against prior period data.';
+  } else {
+    if (pressTitle) pressTitle.textContent = 'KC Press & Community Coverage';
+    if (pressDesc)  pressDesc.textContent = 'Pull recent news articles, Reddit mentions, and community signals about this business and neighborhood.';
+  }
+  // Brief panel
+  const briefTitle = document.getElementById('brief-title');
+  const briefDesc  = document.getElementById('brief-desc');
+  const briefMap = {
+    launch:   ['Launch Report', 'Full pre-launch intelligence report — viability verdict, financial projection, funding pathways, and recommended next steps.'],
+    consult:  ['Presage Consult Brief', 'Synthesizes review signals, competitor intel, and community findings into a structured client deliverable.'],
+    audit:    ['Presage Executive Brief', 'Full audit report — synthesizes all module findings into a structured $2,500 client deliverable.'],
+    retainer: ['Monthly Brief', 'Monthly monitoring summary — what changed, what to watch, what to do next.'],
+  };
+  const [t, d] = briefMap[tier] || briefMap.consult;
+  if (briefTitle) briefTitle.textContent = t;
+  if (briefDesc)  briefDesc.textContent = d;
+}
+
+function populateSetupFields(cl) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  // Audit/Consult/Retainer setup
+  set('s-client', cl.name);
+  set('s-biz',    cl.bizname || '');
+  set('s-nbhd',   cl.neighborhood || '');
+  set('s-challenge', cl.concept || '');
+  set('s-notes',  cl.notes || '');
+  if (cl.biztype) {
+    const el = document.getElementById('s-type');
+    if (el) for (const opt of el.options) { if (opt.value === cl.biztype || opt.text === cl.biztype) { el.value = opt.value; break; } }
+  }
+  // Launch concept setup
+  set('cc-client', cl.name);
+  set('cc-email',  cl.email || '');
+  set('cc-nbhd',   cl.neighborhood || '');
+  set('cc-concept', cl.concept || '');
+}
+
+// =============================================
+// SIDEBAR RENDERING
+// =============================================
+function renderSidebar() {
+  const nav = document.getElementById('module-nav');
+  const modules = TIER_MODULES[currentTier] || [];
+  nav.innerHTML = modules.map(m => `
+    <div class="mnav-item${moduleDone[m.id] ? ' done' : ''}" id="nav-${m.id}" onclick="showPanel('${m.id}')">
+      <span class="mnav-icon">${m.icon}</span>
+      <span class="mnav-label">${m.label}</span>
+      <span class="mnav-check">✓</span>
+    </div>`).join('');
+  updateProgress();
+}
+
+// =============================================
+// PANEL NAVIGATION
+// =============================================
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.mnav-item').forEach(n => n.classList.remove('active'));
+  const panel = document.getElementById('panel-' + id);
+  const nav   = document.getElementById('nav-' + id);
+  if (panel) panel.classList.add('active');
+  if (nav)   nav.classList.add('active');
+}
+
+function markDone(id) {
+  moduleDone[id] = true;
+  const nav = document.getElementById('nav-' + id);
+  if (nav) nav.classList.add('done');
+  updateProgress();
+}
+
+function updateProgress() {
+  const modules = TIER_MODULES[currentTier] || [];
+  const done = modules.filter(m => moduleDone[m.id]).length;
+  const total = modules.length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const fill = document.getElementById('progress-fill');
+  const pctEl = document.getElementById('progress-pct');
+  if (fill) fill.style.width = pct + '%';
+  if (pctEl) pctEl.textContent = done + ' / ' + total + ' modules';
+}
+
+function advancePanel() {
+  const modules = TIER_MODULES[currentTier] || [];
+  const activeNav = document.querySelector('.mnav-item.active');
+  if (!activeNav) return;
+  const activeId = activeNav.id.replace('nav-', '');
+  const idx = modules.findIndex(m => m.id === activeId);
+  if (idx >= 0 && idx < modules.length - 1) showPanel(modules[idx + 1].id);
+}
+
+function skipModule(id, reason) {
+  const bodyEl = document.getElementById(id + '-result-body') || document.getElementById('inv-result-body');
+  const resultEl = document.getElementById(id + '-result') || document.getElementById('inv-result');
+  const label = reason === 'N/A' ? 'N/A — Not applicable for this business type.' : 'TBD — To be completed in a follow-up session.';
+  const color = reason === 'N/A' ? 'var(--text3)' : 'var(--warn)';
+  if (bodyEl) { bodyEl.innerHTML = `<span style="font-size:11px;color:${color};font-style:italic;">${label}</span>`; if (resultEl) resultEl.classList.add('visible'); }
+  markDone(id);
+  advancePanel();
+}
+
+// =============================================
+// CLIENT CONTEXT (for AI prompts)
+// =============================================
+function getClientContext() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  return `Business: ${g('s-biz') || (currentClient && currentClient.bizname) || 'Unknown'}
+Type: ${g('s-type') || 'Unknown'}
+Neighborhood: ${g('s-nbhd') || (currentClient && currentClient.neighborhood) || 'Kansas City'}, Kansas City
+Years in Business: ${g('s-years') || 'Unknown'}
+Est. Annual Revenue: ${g('s-revenue') || 'Unknown'}
+Avg Check: ${g('s-check') || 'Unknown'}
+Challenge: ${g('s-challenge') || (currentClient && currentClient.concept) || 'Not provided'}`;
+}
+
+function getConsultContext() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  return `Client: ${g('cc-client') || (currentClient && currentClient.name) || 'Unknown'}
+Background: ${g('cc-background') || 'Unknown'}
+Investment Range: ${g('cc-investment') || 'Unknown'}
+Business Type: ${g('cc-type') || 'Unknown'}
+Target Neighborhood: ${g('cc-nbhd') || (currentClient && currentClient.neighborhood) || 'Unknown'}, Kansas City
+Target Avg Transaction: ${g('cc-check') || 'Unknown'}
+Concept: ${g('cc-concept') || (currentClient && currentClient.concept) || 'Not provided'}
+Why this neighborhood: ${g('cc-why') || 'Not provided'}
+Biggest concern: ${g('cc-concern') || 'Not provided'}`;
+}
+
+// =============================================
+// MENU & VENDOR ITEM LISTS (UI only — AI in Commit 3)
+// =============================================
+let menuItems = [];
+let vendorItems = [];
+
+function addMenuItem(name='',price='',vol='',mentions='') {
+  const id = Date.now();
+  menuItems.push({ id, name, price, vol, mentions });
+  renderMenuItems();
+}
+
+function removeMenuItem(id) {
+  menuItems = menuItems.filter(m => m.id !== id);
+  renderMenuItems();
+}
+
+function renderMenuItems() {
+  const list = document.getElementById('menu-items-list');
+  if (!list) return;
+  if (!menuItems.length) { list.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">No items yet. Add manually or use Auto-populate.</div>'; return; }
+  list.innerHTML = menuItems.map(m => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:9px 12px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:5px;">
+      <input class="fi" style="padding:5px 8px;" value="${escHtml(m.name)}" placeholder="Item name" oninput="menuItems.find(x=>x.id===${m.id}).name=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(m.price)}" placeholder="$" oninput="menuItems.find(x=>x.id===${m.id}).price=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(m.vol)}" placeholder="Hi/Med/Lo" oninput="menuItems.find(x=>x.id===${m.id}).vol=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(m.mentions)}" placeholder="—" oninput="menuItems.find(x=>x.id===${m.id}).mentions=this.value"/>
+      <button onclick="removeMenuItem(${m.id})" style="background:transparent;border:1px solid var(--border);color:var(--text3);width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all .2s;" onmouseover="this.style.borderColor='var(--danger)';this.style.color='var(--danger)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+    </div>`).join('');
+}
+
+function addVendor(name='',cat='',spend='',local='') {
+  const id = Date.now();
+  vendorItems.push({ id, name, cat, spend, local });
+  renderVendors();
+}
+
+function removeVendor(id) {
+  vendorItems = vendorItems.filter(v => v.id !== id);
+  renderVendors();
+}
+
+function renderVendors() {
+  const list = document.getElementById('vendor-list');
+  if (!list) return;
+  if (!vendorItems.length) { list.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">No vendors yet.</div>'; return; }
+  list.innerHTML = vendorItems.map(v => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:9px 12px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:5px;">
+      <input class="fi" style="padding:5px 8px;" value="${escHtml(v.name)}" placeholder="Vendor name" oninput="vendorItems.find(x=>x.id===${v.id}).name=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(v.cat)}" placeholder="Category" oninput="vendorItems.find(x=>x.id===${v.id}).cat=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(v.spend)}" placeholder="$0" oninput="vendorItems.find(x=>x.id===${v.id}).spend=this.value"/>
+      <input class="fi" style="padding:5px 8px;text-align:center;" value="${escHtml(v.local)}" placeholder="Y/N" oninput="vendorItems.find(x=>x.id===${v.id}).local=this.value"/>
+      <button onclick="removeVendor(${v.id})" style="background:transparent;border:1px solid var(--border);color:var(--text3);width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.borderColor='var(--danger)';this.style.color='var(--danger)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+    </div>`).join('');
+}
+
+// =============================================
+// INTEL AUTO-TRIGGER (stubs — fully wired in Commit 3)
+// =============================================
+async function autoTriggerIntel(clientId) {
+  try {
+    const check = await fetch(`/api/intel/business/${clientId}`);
+    const existing = await check.json();
+    if (existing?.status === 'complete') { silentlyPopulateIntel(existing); return; }
+    if (existing?.status === 'gathering' || existing?.status === 'synthesizing') { setIntelStatusBanners('gathering'); startIntelPoll(clientId); return; }
+    setIntelStatusBanners('gathering');
+    await fetch(`/api/intel/business/${clientId}`, { method: 'POST' });
+    startIntelPoll(clientId);
+  } catch(e) { console.warn('[intel] Auto-trigger failed:', e.message); }
+}
+
+function setIntelStatusBanners(state) {
+  const msgs = {
+    gathering:    '<span style="color:var(--warn);">◉ Gathering from Google Maps...</span>',
+    synthesizing: '<span style="color:var(--warn);">◉ Synthesizing with AI...</span>',
+    complete:     '<span style="color:var(--teal);">◎ Intelligence ready</span>',
+    error:        '<span style="color:var(--danger);">⚠ Intel gather failed — click Load Intelligence to retry</span>',
+  };
+  ['review-intel-status','comp-intel-status'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = msgs[state] || ''; });
+}
+
+function startIntelPoll(clientId) {
+  clearInterval(intelPollTimer);
+  intelPollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/intel/business/${clientId}`);
+      const data = await resp.json();
+      if (data?.status === 'synthesizing') setIntelStatusBanners('synthesizing');
+      if (data?.status === 'complete') { clearInterval(intelPollTimer); intelPollTimer = null; silentlyPopulateIntel(data); }
+      if (data?.status === 'error')    { clearInterval(intelPollTimer); intelPollTimer = null; setIntelStatusBanners('error'); }
+    } catch(e) {}
+  }, 5000);
+}
+
+function silentlyPopulateIntel(data) {
+  const place = data.place_data || {};
+  const competitors = data.competitors || [];
+  const gathered = data.gathered_at ? new Date(data.gathered_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  ['review-intel-status','comp-intel-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<span style="color:var(--teal);">◎ Intelligence ready · gathered ${gathered}</span>`;
+  });
+  populateBizProfileCard(place);
+  const reviewBody = document.getElementById('review-result-body');
+  if (reviewBody && data.ai_profile) {
+    document.getElementById('review-result')?.classList.add('visible');
+    reviewBody.innerHTML = data.ai_profile.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    markDone('reviews');
+  }
+  const compBody = document.getElementById('comp-result-body');
+  if (compBody && data.ai_competitors) {
+    document.getElementById('comp-result')?.classList.add('visible');
+    compBody.innerHTML = data.ai_competitors.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+    if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
+    markDone('competitors');
+  }
+}
+
+function populateBizProfileCard(place) {
+  const card = document.getElementById('biz-profile-card');
+  if (!card || !place || !place.rating) return;
+  card.style.display = 'block';
+  const PRICE = { PRICE_LEVEL_FREE:'Free', PRICE_LEVEL_INEXPENSIVE:'$ (<$10)', PRICE_LEVEL_MODERATE:'$$ ($10–$20)', PRICE_LEVEL_EXPENSIVE:'$$$ ($20–$40)', PRICE_LEVEL_VERY_EXPENSIVE:'$$$$ ($40+)' };
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+  set('bip-rating', place.rating ? place.rating + '★' : null);
+  set('bip-price', PRICE[place.priceLevel] || null);
+  set('bip-count', place.userRatingCount ? place.userRatingCount.toLocaleString() + ' reviews' : null);
+  set('bip-web', place.websiteUri ? '✓ Yes' : 'None found');
+  const types = (place.types || []).filter(t => !['point_of_interest','establishment','food'].includes(t));
+  set('bip-type', types.slice(0,2).map(t => t.replace(/_/g,' ')).join(', ') || null);
+  const attrsEl = document.getElementById('bip-attrs');
+  if (attrsEl) {
+    const attrs = ['dineIn','takeout','delivery','reservable','outdoorSeating','liveMusic'].filter(k => place[k]).map(k => k.replace(/([A-Z])/g,' $1').toLowerCase());
+    attrsEl.innerHTML = attrs.map(a => `<span style="background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 8px;border-radius:2px;">${a}</span>`).join('');
+  }
+  const ov = document.getElementById('bip-overview');
+  if (ov) ov.textContent = place.editorialSummary?.text || '';
+}
+
+function renderCompetitorCards(competitors, excludeId) {
+  const container = document.getElementById('comp-list-auto');
+  const cards = document.getElementById('comp-list-cards');
+  if (!container || !cards) return;
+  const PRICE_SYM = { PRICE_LEVEL_FREE:'Free', PRICE_LEVEL_INEXPENSIVE:'$', PRICE_LEVEL_MODERATE:'$$', PRICE_LEVEL_EXPENSIVE:'$$$', PRICE_LEVEL_VERY_EXPENSIVE:'$$$$' };
+  const nearby = competitors.filter(c => c.id !== excludeId).slice(0,20);
+  if (!nearby.length) return;
+  cards.innerHTML = nearby.map(c => {
+    const name = c.displayName?.text || 'Unknown';
+    const rating = c.rating ? c.rating + '★' : '—';
+    const price = PRICE_SYM[c.priceLevel] || '';
+    const type = (c.primaryType || '').replace(/_/g,' ');
+    const rc = c.rating >= 4.5 ? 'var(--teal)' : c.rating >= 4.0 ? 'var(--text2)' : c.rating >= 3.5 ? 'var(--warn)' : 'var(--danger)';
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:10px;">
+      <span style="color:${rc};font-size:12px;font-weight:600;min-width:36px;">${rating}</span>
+      <span style="font-size:10px;color:var(--text3);min-width:60px;">${c.userRatingCount ? '(' + c.userRatingCount.toLocaleString() + ')' : ''}</span>
+      <span style="flex:1;font-size:11px;color:var(--text);">${escHtml(name)}</span>
+      <span style="font-size:10px;color:var(--text3);">${price}</span>
+      <span style="font-size:9px;color:var(--text3);text-transform:capitalize;">${type}</span>
+    </div>`;
+  }).join('');
+  container.style.display = 'block';
+}
+
+async function loadReviewIntel() {
+  if (!currentClientId) { document.getElementById('review-intel-status').innerHTML = '<span style="color:var(--warn);">Load a client first.</span>'; return; }
+  document.getElementById('review-intel-btn').disabled = true;
+  document.getElementById('review-result').classList.add('visible');
+  document.getElementById('review-result-body').innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  clearInterval(intelPollTimer);
+  await checkIntelStatus('review');
+  intelPollTimer = setInterval(() => checkIntelStatus('review'), 4000);
+  document.getElementById('review-intel-btn').disabled = false;
+}
+
+async function loadCompetitorIntel() {
+  if (!currentClientId) { document.getElementById('comp-intel-status').innerHTML = '<span style="color:var(--warn);">Load a client first.</span>'; return; }
+  document.getElementById('comp-intel-btn').disabled = true;
+  document.getElementById('comp-result').classList.add('visible');
+  document.getElementById('comp-result-body').innerHTML = '<div class="typing-row"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div>';
+  clearInterval(intelPollTimer);
+  await checkIntelStatus('competitors');
+  intelPollTimer = setInterval(() => checkIntelStatus('competitors'), 4000);
+  document.getElementById('comp-intel-btn').disabled = false;
+}
+
+async function checkIntelStatus(target) {
+  try {
+    const resp = await fetch(`/api/intel/business/${currentClientId}`);
+    const data = await resp.json();
+    const status = data?.status || 'pending';
+    if (status === 'gathering' || status === 'synthesizing') {
+      const msg = status === 'gathering' ? 'Gathering from Google Maps...' : 'Synthesizing with AI...';
+      ['review-intel-status','comp-intel-status'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = `<span style="color:var(--warn);">${msg}</span>`; });
+      return;
+    }
+    clearInterval(intelPollTimer); intelPollTimer = null;
+    if (status === 'complete') { silentlyPopulateIntel(data); return; }
+    if (status === 'error') { setIntelStatusBanners('error'); return; }
+    ['review-intel-status','comp-intel-status'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<span style="color:var(--text3);">No data yet. Intelligence gathers automatically on session load.</span>'; });
+  } catch(e) { clearInterval(intelPollTimer); intelPollTimer = null; }
+}
+
+// Stubs for Commit 3 AI functions
+async function analyzeMenu()      { alert('AI analysis wiring coming in next commit.'); }
+async function analyzeInventory() { alert('AI analysis wiring coming in next commit.'); }
+async function generateBrief()    { alert('AI report generation coming in next commit.'); }
+async function runMarketAnalysis()   { alert('AI analysis coming in next commit.'); }
+async function runConceptReddit()    { alert('Coming in next commit.'); }
+async function runCommunityAnalysis()    { alert('Coming in next commit.'); }
+async function runStoredCommunityAnalysis() { alert('Coming in next commit.'); }
+async function runFinancialProjection()  { alert('Coming in next commit.'); }
+async function runFundingAnalysis()      { alert('Coming in next commit.'); }
+async function runPressAnalysis()        { alert('Coming in next commit.'); }
+async function runPressReddit()          { alert('Coming in next commit.'); }
+async function uploadMenuPhoto()         { alert('Coming in next commit.'); }
+function previewMenuUpload()             {}
+function copyBrief() { const t = document.getElementById('brief-output')?.innerText; if (t && !t.includes('Complete the session')) navigator.clipboard.writeText(t).then(() => alert('Copied.')); else alert('Generate the report first.'); }
 
 // =============================================
 // NEW SESSION MODAL
