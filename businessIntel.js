@@ -353,15 +353,18 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       websiteData = await scrapeWebsite(place.websiteUri);
     }
 
-    // ── 4. Community mentions + KC review sources (parallel) ───────────────
+    // ── 4. Community mentions + web search + Instagram (parallel) ──────────
     let communityMentions = [];
-    let kcReviews = [];
+    let webSearchResults = [];
+    let instagramData = null;
     try {
-      [communityMentions, kcReviews] = await Promise.all([
+      [communityMentions, webSearchResults, instagramData] = await Promise.all([
         getCommunityMentions(pool, businessName).catch(() => []),
-        scrapeKCReviewSources(businessName).catch(() => []),
+        searchAndScrapeWeb(businessName, neighborhood).catch(() => []),
+        scrapeInstagram(businessName).catch(() => ({ handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown' })),
       ]);
-      if (kcReviews.length) console.log(`[intel] KC review sources: found mentions in ${kcReviews.length} source(s)`);
+      if (webSearchResults.length) console.log(`[intel] Web search: found ${webSearchResults.length} result(s)`);
+      if (instagramData?.handle) console.log(`[intel] Instagram: ${instagramData.handle}`);
     } catch (e) { /* non-fatal */ }
 
     // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
@@ -405,7 +408,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
     ]);
 
     // ── 7. AI synthesis ─────────────────────────────────────────────────────
-    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, kcReviews);
+    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData);
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -415,7 +418,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
 }
 
 // ── AI Synthesis ──────────────────────────────────────────────────────────────
-async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, kcReviews = []) {
+async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults = [], instagramData = null) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     await pool.query(`UPDATE business_intel SET status='error', error_message=$1 WHERE client_id=$2`,
@@ -451,11 +454,22 @@ async function synthesizeIntel(pool, clientId, place, competitors, websiteData, 
     ? communityMentions.map(m => `[${m.source} · ${m.sentiment}] ${m.title}: ${(m.body || '').substring(0, 200)}`).join('\n\n')
     : 'No community mentions found in database yet.';
 
-  const kcReviewText = kcReviews.length > 0
-    ? kcReviews.map(r =>
-        `[${r.source}]\n` + r.snippets.join('\n')
+  const webSearchText = webSearchResults.length > 0
+    ? webSearchResults.map(r =>
+        r.snippets
+          ? `[${r.source}]\n` + r.snippets.join('\n')
+          : `[${r.source} · ${r.relevance || 'medium'}] ${r.snippet || ''}`
       ).join('\n\n')
-    : 'No mentions found in KC Magazine, The Pitch KC, or KCUR.';
+    : 'No mentions found in web search or KC press sources.';
+
+  const instagramContext = instagramData?.handle
+    ? `INSTAGRAM / SOCIAL PRESENCE:\nHandle: ${instagramData.handle}\nBio: ${instagramData.bio || 'N/A'}\nRecent Posts (${instagramData.recentPosts.length}):\n` +
+      instagramData.recentPosts.slice(0, 8).map(p =>
+        `- "${(p.caption || '').substring(0, 120)}" [${p.sentiment || 'neutral'}]${p.engagement ? ` (${p.engagement.likes} likes, ${p.engagement.comments} comments)` : ''}`
+      ).join('\n') +
+      `\nOverall Social Sentiment: ${instagramData.overallSentiment || 'unknown'}`
+    : 'Instagram: no public profile found or not accessible.';
+
   const menuContext = websiteData?.menuText
     ? `MENU PAGE:\n${websiteData.menuText.substring(0, 3000)}`
     : websiteData?.homeText
@@ -503,8 +517,10 @@ ${photoContext}
 COMMUNITY MENTIONS (Reddit/News from collected database):
 ${communityText}
 
-KC LOCAL PRESS COVERAGE (KC Magazine, The Pitch KC, KCUR):
-${kcReviewText}
+WEB SEARCH & KC PRESS COVERAGE:
+${webSearchText}
+
+${instagramContext}
 
 Generate a structured business intelligence report. Use ** for section headers.
 
@@ -622,4 +638,248 @@ Rules:
   } catch(e) { return []; }
 }
 
-module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources };
+// ── Google Custom Search Agent for press/source discovery ────────────────────
+// Requires GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX env vars (set in Railway).
+// Falls back to the fixed KC site scraper if not configured.
+async function searchAndScrapeWeb(businessName, neighborhood) {
+  const searchKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const searchCx  = process.env.GOOGLE_SEARCH_CX;
+
+  if (!searchKey || !searchCx) {
+    console.log('[intel] Google Custom Search not configured — falling back to fixed KC scrapers');
+    return scrapeKCReviewSources(businessName);
+  }
+
+  const queries = [
+    `${businessName} ${neighborhood || ''} Kansas City`.trim(),
+    `${businessName} Kansas City review`,
+  ];
+
+  const skipDomains = [
+    'facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'tiktok.com',
+    'linkedin.com', 'youtube.com', 'yelp.com', 'tripadvisor.com',
+  ];
+  const skipExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+
+  const seenUrls = new Set();
+  const allResults = [];
+
+  for (const q of queries) {
+    try {
+      const params = new URLSearchParams({
+        key: searchKey, cx: searchCx,
+        q, num: '5',
+      });
+      const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) { console.warn(`[intel] Google Search API ${res.status}`); continue; }
+      const data = await res.json();
+      const items = data.items || [];
+
+      for (const item of items) {
+        const url = item.link;
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+
+        // Skip auth-walled social media, PDFs, and already-known fixed sources
+        const domain = new URL(url).hostname.replace(/^www\./, '');
+        if (skipDomains.some(d => domain.includes(d))) continue;
+        if (skipExtensions.some(ext => url.toLowerCase().endsWith(ext))) continue;
+
+        // Fetch and extract relevant text
+        try {
+          const pageRes = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PresageIQ-Intel/1.0)' },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (!pageRes.ok) continue;
+          const contentType = pageRes.headers.get('content-type') || '';
+          if (!contentType.includes('text/html')) continue;
+
+          const html = await pageRes.text();
+          const text = html
+            .replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[\s\S]*?<\/style>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+            .replace(/\s+/g, ' ').trim();
+
+          const nameLower = businessName.toLowerCase();
+          const textLower = text.toLowerCase();
+          const idx = textLower.indexOf(nameLower);
+          if (idx === -1) continue;
+
+          // Extract snippet around the mention
+          const start = Math.max(0, idx - 100);
+          const end = Math.min(text.length, idx + 200);
+          const snippet = '...' + text.substring(start, end).trim() + '...';
+
+          // Simple relevance: count mentions
+          let mentions = 0;
+          let searchFrom = 0;
+          while (searchFrom < textLower.length) {
+            const pos = textLower.indexOf(nameLower, searchFrom);
+            if (pos === -1) break;
+            mentions++;
+            searchFrom = pos + nameLower.length;
+          }
+
+          allResults.push({
+            source: item.displayLink || domain,
+            url,
+            snippet,
+            relevance: mentions > 3 ? 'high' : mentions > 1 ? 'medium' : 'low',
+          });
+        } catch (e) { /* page fetch failed — skip */ }
+      }
+    } catch (e) { console.warn(`[intel] Search query failed: ${e.message}`); }
+  }
+
+  // Also run the fixed KC scrapers and merge (dedup by URL)
+  const fixedResults = await scrapeKCReviewSources(businessName).catch(() => []);
+  for (const fr of fixedResults) {
+    if (!seenUrls.has(fr.url)) {
+      allResults.push({
+        source: fr.source,
+        url: fr.url,
+        snippet: fr.snippets?.[0] || '',
+        relevance: 'medium',
+      });
+    }
+  }
+
+  console.log(`[intel] Web search found ${allResults.length} result(s) for "${businessName}"`);
+  return allResults;
+}
+
+// ── Instagram public page scraping ──────────────────────────────────────────
+// Searches for the business Instagram via Google, fetches public page, extracts
+// bio and recent post captions. No auth required for public profiles.
+async function scrapeInstagram(businessName) {
+  const result = { handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown' };
+
+  // Step 1: Find Instagram handle via Google search
+  const searchKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const searchCx  = process.env.GOOGLE_SEARCH_CX;
+  let profileUrl = null;
+
+  if (searchKey && searchCx) {
+    try {
+      const params = new URLSearchParams({
+        key: searchKey, cx: searchCx,
+        q: `${businessName} Kansas City instagram site:instagram.com`, num: '3',
+      });
+      const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const igItem = (data.items || []).find(i =>
+          i.link && i.link.includes('instagram.com/') && !i.link.includes('/p/') && !i.link.includes('/reel/')
+        );
+        if (igItem) profileUrl = igItem.link;
+      }
+    } catch (e) { console.warn(`[intel] Instagram search failed: ${e.message}`); }
+  }
+
+  if (!profileUrl) {
+    console.log(`[intel] Could not find Instagram for "${businessName}" — skipping`);
+    return result;
+  }
+
+  // Extract handle from URL
+  const handleMatch = profileUrl.match(/instagram\.com\/([^/?#]+)/);
+  result.handle = handleMatch ? '@' + handleMatch[1] : null;
+
+  // Step 2: Fetch public Instagram page
+  try {
+    const res = await fetch(profileUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) { console.warn(`[intel] Instagram page fetch ${res.status}`); return result; }
+    const html = await res.text();
+
+    // Try to extract bio from meta description
+    const metaDesc = html.match(/<meta\s+(?:name|property)="(?:description|og:description)"\s+content="([^"]+)"/i);
+    if (metaDesc) {
+      result.bio = metaDesc[1]
+        .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+        .trim();
+    }
+
+    // Try to extract shared data JSON (public profiles sometimes embed this)
+    const sharedData = html.match(/window\._sharedData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+    if (sharedData) {
+      try {
+        const parsed = JSON.parse(sharedData[1]);
+        const user = parsed?.entry_data?.ProfilePage?.[0]?.graphql?.user;
+        if (user) {
+          result.bio = user.biography || result.bio;
+          result.handle = '@' + user.username;
+          const edges = user.edge_owner_to_timeline_media?.edges || [];
+          result.recentPosts = edges.slice(0, 12).map(e => ({
+            caption: e.node?.edge_media_to_caption?.edges?.[0]?.node?.text || '',
+            engagement: {
+              likes: e.node?.edge_liked_by?.count || 0,
+              comments: e.node?.edge_media_to_comment?.count || 0,
+            },
+            sentiment: 'neutral',
+          }));
+        }
+      } catch (e) { /* JSON parse failed — use meta fallback */ }
+    }
+
+    // Try additional JSON embed format (newer Instagram pages)
+    if (result.recentPosts.length === 0) {
+      const additionalData = html.match(/"biography":"([^"]*?)"/);
+      if (additionalData) {
+        result.bio = result.bio || additionalData[1].replace(/\\n/g, ' ').replace(/\\u[\dA-Fa-f]{4}/g, '');
+      }
+    }
+  } catch (e) {
+    console.warn(`[intel] Instagram scrape failed: ${e.message}`);
+  }
+
+  // Step 3: Run sentiment analysis on captions if we have them
+  if (result.recentPosts.length > 0) {
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      try {
+        const captions = result.recentPosts.map((p, i) => `${i+1}. ${p.caption.substring(0, 200)}`).join('\n');
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini', max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Analyze the sentiment of each Instagram post caption below for a business called "${businessName}". Output ONLY a JSON object like: {"posts": [{"index": 1, "sentiment": "positive"}, ...], "overall": "positive"}. Sentiments: positive, neutral, negative.\n\nCaptions:\n${captions}`,
+            }],
+          }),
+        });
+        const data = await res.json();
+        const raw = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          result.overallSentiment = parsed.overall || 'neutral';
+          (parsed.posts || []).forEach(p => {
+            if (result.recentPosts[p.index - 1]) result.recentPosts[p.index - 1].sentiment = p.sentiment;
+          });
+        }
+      } catch (e) { /* sentiment analysis failed — keep neutral defaults */ }
+    }
+  }
+
+  console.log(`[intel] Instagram: ${result.handle || 'not found'}, ${result.recentPosts.length} posts, sentiment: ${result.overallSentiment}`);
+  return result;
+}
+
+module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram };

@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
-const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources } = require('./businessIntel');
+const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +46,14 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS bizname TEXT`);
   await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS biztype TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_name TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_type TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS years_in_business TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS avg_check TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS annual_revenue TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS size TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS challenge TEXT`);
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS pre_audit_notes TEXT`);
 
   // ── Neighborhood demographic profiles (Census ACS) ────────────────────────
   await pool.query(`
@@ -428,11 +436,18 @@ app.post('/api/intel/business/:clientId', async (req, res) => {
     const businessName = bizname || name;
     if (!businessName) return res.status(400).json({ error: 'No business name on this client record' });
 
+    // If force=true, delete existing intel rows (but NOT client profile data)
+    const force = req.body?.force === true;
+    if (force) {
+      await pool.query(`DELETE FROM business_intel WHERE client_id=$1`, [clientId]);
+      console.log(`[intel] Force refresh: deleted existing intel for client ${clientId}`);
+    }
+
     // Fire and return — gathering runs in background
     gatherBusinessIntel(pool, clientId, businessName, neighborhood)
       .catch(e => console.error(`[intel] Background gather error: ${e.message}`));
 
-    res.status(202).json({ started: true, message: `Intelligence gathering started for "${businessName}"` });
+    res.status(202).json({ started: true, force, message: `Intelligence gathering started for "${businessName}"` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -509,6 +524,32 @@ app.post('/api/intel/press-live/:clientId', async (req, res) => {
 
     const results = await scrapeKCReviewSources(businessName);
     res.json({ businessName, results, count: results.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/intel/web-search/:clientId ─ Google search agent for a client ──
+app.post('/api/intel/web-search/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const client = await pool.query(`SELECT bizname, name, neighborhood FROM clients WHERE id=$1`, [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const { bizname, name, neighborhood } = client.rows[0];
+    const businessName = (bizname || name || '').trim();
+    if (!businessName) return res.status(400).json({ error: 'No business name on this client record' });
+
+    const query = req.body?.query || businessName;
+    const results = await searchAndScrapeWeb(query, neighborhood);
+
+    // Save results to business_intel web_search_data
+    await pool.query(`
+      UPDATE business_intel SET community_mentions = COALESCE(community_mentions, '[]'::JSONB)
+      WHERE client_id=$1
+    `, [clientId]);
+
+    res.json({ businessName, query, results, count: results.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -596,11 +637,40 @@ app.get('/api/clients/:id', async (req, res) => {
 // ── PATCH /api/clients/:id ────────────────────────────────────────────────────
 app.patch('/api/clients/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { status } = req.body;
   if (!id) return res.status(400).json({ error: 'Invalid id' });
-  if (!['pending', 'active', 'complete'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+  // Allowed fields that can be updated
+  const allowed = [
+    'status', 'name', 'email', 'service', 'concept', 'neighborhood', 'phone', 'notes',
+    'bizname', 'biztype', 'business_name', 'business_type', 'years_in_business',
+    'avg_check', 'annual_revenue', 'size', 'challenge', 'pre_audit_notes',
+  ];
+
+  // Validate status if provided
+  if (req.body.status && !['pending', 'active', 'complete'].includes(req.body.status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  const setClauses = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) {
+      setClauses.push(`${field} = $${paramIndex}`);
+      values.push(req.body[field]);
+      paramIndex++;
+    }
+  }
+
+  if (setClauses.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+  values.push(id);
   try {
-    const result = await pool.query(`UPDATE clients SET status = $1 WHERE id = $2 RETURNING *`, [status, id]);
+    const result = await pool.query(
+      `UPDATE clients SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      values
+    );
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Database error' }); }

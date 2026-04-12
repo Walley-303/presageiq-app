@@ -541,6 +541,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
           <button class="run-btn purple" id="press-db-btn" onclick="runPressAnalysis()">◎ Query Intelligence Database</button>
           <button class="run-btn teal" id="press-reddit-btn" onclick="runPressReddit()">◎ Pull Live Reddit</button>
+          <button class="run-btn" style="background:var(--warn);color:#000;" id="refresh-intel-btn" onclick="refreshIntel()">↻ Refresh Intel</button>
           <button class="run-btn muted" onclick="skipModule('press','N/A')">N/A</button>
         </div>
         <div id="press-status" style="font-size:11px;color:var(--text3);min-height:14px;margin-bottom:10px;"></div>
@@ -959,6 +960,7 @@ function enterSession(clientId) {
 
   // Pre-populate setup fields from client record
   populateSetupFields(cl);
+  attachProfileAutoSave();
 
   // Switch views
   document.getElementById('queue-view').style.display = 'none';
@@ -1033,19 +1035,78 @@ function populateSetupFields(cl) {
   const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   // Audit/Consult/Retainer setup
   set('s-client', cl.name);
-  set('s-biz',    cl.bizname || '');
+  set('s-biz',    cl.bizname || cl.business_name || '');
   set('s-nbhd',   cl.neighborhood || '');
-  set('s-challenge', cl.concept || '');
-  set('s-notes',  cl.notes || '');
-  if (cl.biztype) {
+  set('s-challenge', cl.challenge || cl.concept || '');
+  set('s-notes',  cl.pre_audit_notes || cl.notes || '');
+  set('s-years',  cl.years_in_business || '');
+  set('s-revenue', cl.annual_revenue || '');
+  set('s-check',  cl.avg_check || '');
+  set('s-size',   cl.size || '');
+  if (cl.biztype || cl.business_type) {
+    const val = cl.biztype || cl.business_type;
     const el = document.getElementById('s-type');
-    if (el) for (const opt of el.options) { if (opt.value === cl.biztype || opt.text === cl.biztype) { el.value = opt.value; break; } }
+    if (el) for (const opt of el.options) { if (opt.value === val || opt.text === val) { el.value = opt.value; break; } }
   }
   // Launch concept setup
   set('cc-client', cl.name);
   set('cc-email',  cl.email || '');
   set('cc-nbhd',   cl.neighborhood || '');
   set('cc-concept', cl.concept || '');
+}
+
+// ── Debounced client profile auto-save ──────────────────────────────────────
+let _profileSaveTimer = null;
+function scheduleProfileSave() {
+  if (!currentClientId) return;
+  clearTimeout(_profileSaveTimer);
+  _profileSaveTimer = setTimeout(() => saveClientProfile(), 1000);
+}
+
+async function saveClientProfile() {
+  if (!currentClientId) return;
+  const g = id => document.getElementById(id)?.value?.trim() || '';
+  const payload = {
+    name:              g('s-client') || g('cc-client'),
+    bizname:           g('s-biz'),
+    business_name:     g('s-biz'),
+    biztype:           g('s-type'),
+    business_type:     g('s-type'),
+    neighborhood:      g('s-nbhd') || g('cc-nbhd'),
+    years_in_business: g('s-years'),
+    annual_revenue:    g('s-revenue'),
+    avg_check:         g('s-check'),
+    size:              g('s-size'),
+    challenge:         g('s-challenge'),
+    pre_audit_notes:   g('s-notes'),
+    concept:           g('cc-concept') || g('s-challenge'),
+    email:             g('cc-email'),
+    notes:             g('s-notes'),
+  };
+  // Remove empty values so we don't overwrite with blanks
+  for (const k of Object.keys(payload)) { if (!payload[k]) delete payload[k]; }
+  if (Object.keys(payload).length === 0) return;
+  try {
+    await fetch(`/api/clients/${currentClientId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) { console.warn('[profile] Auto-save failed:', e.message); }
+}
+
+// Attach auto-save listeners to all setup fields
+function attachProfileAutoSave() {
+  const fields = [
+    's-client','s-biz','s-type','s-nbhd','s-years','s-revenue','s-check','s-size',
+    's-challenge','s-notes','cc-client','cc-email','cc-nbhd','cc-concept',
+  ];
+  for (const id of fields) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener('input', scheduleProfileSave);
+    el.addEventListener('change', scheduleProfileSave);
+  }
 }
 
 // =============================================
@@ -1267,6 +1328,37 @@ function silentlyPopulateIntel(data) {
     compBody.innerHTML = data.ai_competitors.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text);">$1</strong>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
     if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
     markDone('competitors');
+  }
+}
+
+// ── Refresh Intel (re-scan without losing client profile) ───────────────────
+async function refreshIntel() {
+  if (!currentClientId) return;
+  const ok = confirm('This will run a fresh scan and replace cached intel results. Client profile and session notes will be preserved. Continue?');
+  if (!ok) return;
+
+  const btn = document.getElementById('refresh-intel-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Scanning...'; }
+
+  // Clear existing intel displays
+  setIntelStatusBanners('gathering');
+  const reviewBody = document.getElementById('review-result-body');
+  const compBody = document.getElementById('comp-result-body');
+  if (reviewBody) reviewBody.innerHTML = '';
+  if (compBody) compBody.innerHTML = '';
+
+  try {
+    await fetch(`/api/intel/business/${currentClientId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true }),
+    });
+    startIntelPoll(currentClientId);
+  } catch (e) {
+    setIntelStatusBanners('error');
+    console.error('[intel] Refresh failed:', e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Intel'; }
   }
 }
 
