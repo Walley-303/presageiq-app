@@ -720,6 +720,8 @@ app.get('/api/intel/score/:clientId', async (req, res) => {
   }
 });
 
+app.get('/methodology', (req, res) => res.sendFile(path.join(__dirname, 'public', 'methodology.html')));
+
 // ── Fallback ──────────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'presage-consult.html'));
