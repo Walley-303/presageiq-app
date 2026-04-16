@@ -2,6 +2,8 @@
 // Each of 6 dimensions is scored 0-100 by AI with a cited justification.
 // The composite is computed deterministically from fixed weights — never by AI.
 
+const { getHolcData, buildHolcNote } = require('./dataSources');
+
 const DIMENSIONS = [
   { key: 'customer_sentiment',       label: 'Customer Sentiment',      weight: 0.25 },
   { key: 'competitive_position',     label: 'Competitive Position',    weight: 0.20 },
@@ -145,10 +147,22 @@ function computeComposite(dimensionScores) {
 }
 
 // ── Score, compute composite, persist to DB, and return result ────────────────
-async function computeAndStore(pool, clientId, intel, businessName) {
+async function computeAndStore(pool, clientId, intel, businessName, neighborhood) {
   console.log(`[score] Computing opportunity score for client ${clientId}: "${businessName}"`);
   const dimensionScores = await scoreDimensions(intel, businessName);
   const composite = computeComposite(dimensionScores);
+
+  // Look up HOLC historical grade for C/D-graded neighborhoods
+  const holcData = getHolcData(neighborhood);
+  const holcInfo = (holcData && (holcData.grade === 'C' || holcData.grade === 'D'))
+    ? {
+        neighborhood: neighborhood,
+        grade:        holcData.grade,
+        year:         holcData.year,
+        description:  holcData.description,
+        note:         buildHolcNote(neighborhood, holcData),
+      }
+    : null;
 
   const breakdown = {
     dimensions: DIMENSIONS.map(d => ({
@@ -159,6 +173,7 @@ async function computeAndStore(pool, clientId, intel, businessName) {
       justification: dimensionScores[d.key]?.justification || '',
     })),
     interpretation: dimensionScores.interpretation || '',
+    holc_info:      holcInfo,
   };
 
   await pool.query(`

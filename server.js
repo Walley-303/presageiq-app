@@ -5,6 +5,7 @@ const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
+const { DATA_SOURCES } = require('./dataSources');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -679,6 +680,11 @@ app.patch('/api/clients/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Database error' }); }
 });
 
+// ── GET /api/sources ─ Full data source registry ─────────────────────────────
+app.get('/api/sources', (req, res) => {
+  res.json(DATA_SOURCES);
+});
+
 // ── GET /api/intel/score/:clientId ─ Opportunity score (compute or return cached) ─
 app.get('/api/intel/score/:clientId', async (req, res) => {
   const clientId = parseInt(req.params.clientId, 10);
@@ -702,10 +708,11 @@ app.get('/api/intel/score/:clientId', async (req, res) => {
       if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
     });
 
-    const clientRes = await pool.query(`SELECT bizname, name FROM clients WHERE id=$1`, [clientId]);
+    const clientRes = await pool.query(`SELECT bizname, name, neighborhood FROM clients WHERE id=$1`, [clientId]);
     const businessName = clientRes.rows[0]?.bizname || clientRes.rows[0]?.name || 'Unknown';
+    const neighborhood = clientRes.rows[0]?.neighborhood || null;
 
-    const result = await computeAndStore(pool, clientId, row, businessName);
+    const result = await computeAndStore(pool, clientId, row, businessName, neighborhood);
     return res.json({ status: 'complete', ...result });
   } catch (err) {
     console.error('[score] Error:', err.message);

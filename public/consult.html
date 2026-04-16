@@ -694,6 +694,19 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
             <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;">Interpretation</div>
             <div id="score-interpretation-text" style="font-size:12px;color:var(--text2);line-height:1.75;"></div>
           </div>
+          <!-- HOLC Historical Context (shown only when neighborhood has C or D grade) -->
+          <div id="score-holc-note" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:14px 16px;margin-top:10px;">
+            <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--warn);margin-bottom:8px;">Historical Context · Mapping Inequality</div>
+            <div id="score-holc-text" style="font-size:12px;color:var(--text2);line-height:1.75;"></div>
+            <div style="margin-top:8px;font-size:10px;color:var(--text3);">Source: <a href="https://dsl.richmond.edu/panorama/redlining" target="_blank" rel="noopener" style="color:var(--text3);text-decoration:underline;">Mapping Inequality — HOLC Redlining Maps</a> · Robert K. Nelson et al., American Panorama</div>
+          </div>
+          <!-- Data Sources Used (collapsible) -->
+          <div style="margin-top:10px;">
+            <button onclick="toggleSources()" id="sources-toggle-btn" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:6px 14px;border-radius:3px;font-family:var(--font-mono);font-size:10px;cursor:pointer;letter-spacing:.5px;width:100%;text-align:left;transition:border-color .2s;">▸ Data Sources Used in This Analysis</button>
+            <div id="score-sources-panel" style="display:none;background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 3px 3px;padding:14px 16px;">
+              <div id="score-sources-list" style="font-size:11px;color:var(--text3);line-height:1.7;">Loading…</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2203,6 +2216,7 @@ async function generateBrief() {
         messages:[{role:'user',content:`CLIENT CONTEXT:\n${getConsultContext()}\n\nMARKET VIABILITY FINDINGS:\n${mktFindings||'Not completed'}\n\nCOMMUNITY INTELLIGENCE:\n${commFindings||'Not completed'}\n\nFINANCIAL PROJECTION:\n${finFindings||'Not completed'}\nStartup Range: ${startupRange} | Monthly Revenue Est: ${revenueEst} | Break-Even: ${breakeven}\n\nFUNDING PATHWAYS:\n${fundFindings||'Not completed'}\n\nWrite the Presage Launch Report. Structure:\n\n**PRESAGE LAUNCH REPORT**\n**${document.getElementById('cc-concept')?.value.substring(0,60)||'Business Concept'} · ${document.getElementById('cc-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (3 sentences — viability verdict, biggest opportunity, most critical risk)\n\n**MARKET VIABILITY** (what the data says about this concept in this market)\n\n**WHAT THE COMMUNITY IS TELLING US** (key signals from locals)\n\n**FINANCIAL SNAPSHOT**\n— Startup Cost Range: ${startupRange}\n— Monthly Revenue Estimate: ${revenueEst}\n— Break-Even Timeline: ${breakeven}\n(1 paragraph interpreting what these numbers mean for this client)\n\n**FUNDING PATHWAYS** (top 3 most relevant for this client)\n\n**PRIORITY ACTION PLAN**\n— This Week\n— Next 30 Days\n— 60-90 Days\n\n**CLOSING ASSESSMENT** (honest, direct, encouraging — acknowledge the risk, affirm the opportunity if it's real)\n\nThis is a $500 deliverable. Write accordingly.`}]
       });
       output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      appendSourceCitations(output);
       markDone('brief');
     } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Report generation failed — ${e.message}</span>`; }
     btn.disabled=false; return;
@@ -2218,6 +2232,7 @@ async function generateBrief() {
         messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nTREND ANALYSIS / PRESS FINDINGS:\n${pressFindings||'Not completed this session'}\n\nWrite the Monthly Retainer Brief. Structure:\n\n**MONTHLY RETAINER BRIEF**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})} · Towns & Walley Intelligence**\n\n**THIS MONTH'S SUMMARY** (2-3 sentences on the state of the business and market this month)\n\n**WHAT'S CHANGED** (new signals, shifts, or developments from the intelligence data)\n\n**TRENDS TO WATCH** (2-3 forward-looking signals worth tracking)\n\n**PRIORITY ACTIONS THIS MONTH** (3-5 specific, actionable recommendations)\n\n**NEXT MONTH FOCUS** (what we should investigate or address in the next session)\n\nKeep it concise and actionable — this is a monthly check-in, not a full audit.`}]
       });
       output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      appendSourceCitations(output);
       markDone('brief');
     } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
     btn.disabled=false; return;
@@ -2235,6 +2250,7 @@ async function generateBrief() {
         messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n\nREVIEW SIGNALS:\n${reviewFindings||'Not completed'}\n\nCOMPETITOR INTEL:\n${compFindings||'Not completed'}\n\nKC PRESS / COMMUNITY:\n${pressFindings||'Not completed'}\n\nWrite the Presage Consult Brief. Structure:\n\n**PRESAGE CONSULT BRIEF**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${document.getElementById('s-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — overall assessment and single highest-priority recommendation)\n\n**WHAT'S WORKING** (strengths drawn from review and intel data)\n\n**WHAT NEEDS TO CHANGE** (specific problems, prioritized by impact)\n\n**COMPETITIVE POSITIONING** (how to stand out given the competitor landscape)\n\n**WHAT THE COMMUNITY IS SAYING** (if press/community data was gathered)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n\n**CLOSING NOTE** (one paragraph of honest, direct guidance)\n\nBe specific. Reference actual data. This is a $250 deliverable — write accordingly.`}]
       });
       output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+      appendSourceCitations(output);
       markDone('brief');
     } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
     btn.disabled=false; return;
@@ -2269,6 +2285,7 @@ async function generateBrief() {
       messages:[{role:'user',content:`CLIENT CONTEXT:\n${getClientContext()}\n${placeContext}\n\nREVIEW & REPUTATION INTELLIGENCE:\n${aiProfile||'Not yet gathered'}\n\nMENU ANALYSIS:\n${menuResult||'Not manually entered'}${menuContext}\n\nSUPPLY CHAIN FINDINGS:\n${invResult||'Not completed'}\n\nCOMPETITOR INTELLIGENCE:\n${aiCompetitors||'Not yet gathered'}\n\nWrite the Presage Brief Extended. Structure:\n\n**PRESAGE BRIEF EXTENDED**\n**${document.getElementById('s-biz')?.value||'Client Business'} · ${document.getElementById('s-nbhd')?.value||'Kansas City'} · Towns & Walley Intelligence**\n\n**EXECUTIVE SUMMARY** (2-3 sentences — what is the actual state of this business based on the data above, and the single most critical action)\n\n**WHAT'S WORKING** (specific strengths from the data — reference actual ratings, specific review themes, menu items praised)\n\n**WHAT NEEDS TO CHANGE** (specific problems from the data, prioritized by impact)\n\n**PRIORITY ACTION PLAN**\n— Immediate (next 30 days)\n— Medium-term (60-90 days)\n— Strategic (6-12 months)\n\n**MENU RECOMMENDATIONS** (if menu data exists, reference specific items by name)\n\n**SUPPLY CHAIN RECOMMENDATIONS** (specific vendor/sourcing actions)\n\n**COMPETITIVE POSITIONING** (how to stand out vs. the identified competitors)\n\n**CLOSING NOTE** (one paragraph of honest, direct encouragement)\n\nBe specific. Reference actual data. This is a $2,500 deliverable — write accordingly. If data for a section is genuinely absent, say so briefly and move on — do not pad with generic advice.`}]
     });
     output.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:24px;font-size:12px;line-height:1.85;color:var(--text2);">${renderAI(data.content?.[0]?.text||'')}</div>`;
+    appendSourceCitations(output);
     markDone('brief');
   } catch(e) { output.innerHTML=`<span style="color:var(--danger);">Brief generation failed — ${e.message}</span>`; }
   btn.disabled=false;
@@ -2356,6 +2373,90 @@ function renderScoreOutput(composite, breakdown) {
 
   // Interpretation
   document.getElementById('score-interpretation-text').textContent = breakdown.interpretation || '';
+
+  // HOLC historical context block
+  const holcNote = document.getElementById('score-holc-note');
+  const holcText = document.getElementById('score-holc-text');
+  if (holcNote && holcText) {
+    if (breakdown.holc_info) {
+      holcText.textContent = breakdown.holc_info.note;
+      holcNote.style.display = 'block';
+    } else {
+      holcNote.style.display = 'none';
+    }
+  }
+
+  // Reset sources panel so it re-fetches for this client
+  const srcList = document.getElementById('score-sources-list');
+  const srcPanel = document.getElementById('score-sources-panel');
+  const srcBtn = document.getElementById('sources-toggle-btn');
+  if (srcList) srcList.innerHTML = 'Loading…';
+  if (srcPanel) srcPanel.style.display = 'none';
+  if (srcBtn) srcBtn.textContent = '▸ Data Sources Used in This Analysis';
+}
+
+// =============================================
+// DATA SOURCES
+// =============================================
+let _cachedSources = null;
+
+async function fetchSources() {
+  if (_cachedSources) return _cachedSources;
+  try {
+    const resp = await fetch('/api/sources');
+    if (!resp.ok) return [];
+    _cachedSources = await resp.json();
+    return _cachedSources;
+  } catch(e) { return []; }
+}
+
+function toggleSources() {
+  const panel = document.getElementById('score-sources-panel');
+  const btn   = document.getElementById('sources-toggle-btn');
+  if (!panel || !btn) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = (isOpen ? '▸' : '▾') + ' Data Sources Used in This Analysis';
+  if (!isOpen) populateSourcesList();
+}
+
+async function populateSourcesList() {
+  const listEl = document.getElementById('score-sources-list');
+  if (!listEl || listEl.innerHTML !== 'Loading…') return;
+  const sources = await fetchSources();
+  if (!sources.length) { listEl.textContent = 'Source data unavailable.'; return; }
+  listEl.innerHTML = sources.map((s, i) => {
+    const subsources = (s.id === 'curated_kc_press' && s.sources)
+      ? `<div style="margin-top:7px;padding-left:10px;border-left:1px solid var(--border);">${
+          s.sources.map(ss =>
+            `<div style="margin-bottom:4px;"><a href="${ss.url}" target="_blank" rel="noopener" style="color:var(--text2);text-decoration:none;">${ss.name}</a> <span style="color:var(--text3);">— ${ss.type}</span></div>`
+          ).join('')
+        }</div>`
+      : '';
+    const urlPart = s.url
+      ? `<a href="${s.url}" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none;">${s.url}</a>`
+      : '';
+    const sep = i > 0 ? '<div style="height:1px;background:var(--border);margin:10px 0;"></div>' : '';
+    return `${sep}<div>
+  <div style="font-size:11px;color:var(--text);margin-bottom:2px;">${s.name}</div>
+  <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:3px;">${s.description.substring(0, 180)}${s.description.length > 180 ? '…' : ''}</div>
+  <div style="font-size:10px;display:flex;gap:14px;flex-wrap:wrap;">${urlPart ? `<span>${urlPart}</span>` : ''}<span style="color:var(--text3);">Updated: ${s.update_frequency}</span></div>
+  ${subsources}
+</div>`;
+  }).join('');
+}
+
+async function appendSourceCitations(outputEl) {
+  if (!outputEl) return;
+  const sources = await fetchSources();
+  if (!sources.length) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-top:20px;padding-top:14px;border-top:1px solid var(--border);';
+  div.innerHTML = `<div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Data Sources</div>` +
+    sources.map(s =>
+      `<div style="margin-bottom:7px;font-size:10px;color:var(--text2);">${s.name}${s.url ? ` &nbsp;·&nbsp; <a href="${s.url}" target="_blank" rel="noopener" style="color:var(--text3);text-decoration:underline;">${s.url}</a>` : ''}</div>`
+    ).join('');
+  outputEl.appendChild(div);
 }
 
 // =============================================
