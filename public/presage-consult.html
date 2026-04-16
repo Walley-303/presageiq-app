@@ -77,6 +77,12 @@ section{padding:96px 48px;}
 .tcta-gold:hover{background:var(--gold2);}
 .tcta-out{background:transparent;border:1px solid var(--border2);color:var(--text2);}
 .tcta-out:hover{border-color:var(--gold);color:var(--gold);}
+/* ADD-ON */
+.tc-addon{border:1px dashed rgba(61,158,140,.3);}
+.tc-addon::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--teal2));}
+.tc-addon-badge{position:absolute;top:14px;right:14px;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;background:rgba(61,158,140,.12);color:var(--teal2);border:1px solid rgba(61,158,140,.28);padding:3px 8px;border-radius:2px;}
+.tc-addon-inner{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+@media(max-width:768px){.tc-addon-inner{grid-template-columns:1fr;}}
 /* AUDIT */
 .audit-grid{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start;margin-top:52px;max-width:960px;}
 .modules{display:flex;flex-direction:column;gap:10px;}
@@ -274,6 +280,36 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
     </div>
   </div>
 
+  <div style="max-width:980px;margin:20px auto 0;">
+    <div class="tc tc-addon">
+      <div class="tc-addon-badge">Add-On Service</div>
+      <div class="tc-addon-inner">
+        <div class="tc-head" style="border-right:1px solid var(--border);padding-bottom:28px;">
+          <div class="tc-label" style="color:var(--teal);">Add-On &middot; Audit &amp; Retainer Clients Only</div>
+          <div class="tc-name">Implementation Surge</div>
+          <div class="tc-tag">Where the core tiers deliver the intelligence, the Implementation Surge delivers the execution. Hands-on operational implementation by the founder — across food &amp; beverage, retail, automotive, and other industries.</div>
+          <div class="tc-price" style="border-top:1px solid rgba(61,158,140,.15);">
+            <div class="tc-price-num" style="color:var(--teal2);font-size:26px;letter-spacing:-1px;line-height:1.1;">$5,000&thinsp;&ndash;&thinsp;$10,000</div>
+          </div>
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+            <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:6px;">Performance-Based Option</div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.75;">A Success Fee structure is available for clients who prefer a lower base fee tied to a specific measurable KPI over 90 days.</div>
+          </div>
+        </div>
+        <div class="tc-body" style="padding-top:28px;">
+          <div class="tc-ilab">Services Include</div>
+          <div class="ti">Menu engineering and culinary program development</div>
+          <div class="ti">Staff training and service standard development</div>
+          <div class="ti">Operational systems overhaul</div>
+          <div class="ti">Inventory cross-utilization analysis</div>
+          <div class="ti">Floor flow and guest experience redesign</div>
+          <div class="ti">Brand consistency auditing across food &amp; beverage, retail, automotive, and other industries</div>
+          <a href="#contact" class="tcta" style="background:transparent;border:1px solid rgba(61,158,140,.4);color:var(--teal2);margin-top:20px;" onmouseover="this.style.borderColor='rgba(82,197,176,.7)'" onmouseout="this.style.borderColor='rgba(61,158,140,.4)'" onclick="setTimeout(()=>{document.getElementById('f-service').value='Implementation Surge — $5,000–$10,000'},100)">Inquire About Implementation Surge →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div style="max-width:980px;margin:32px auto 0;">
     <div style="background:rgba(200,150,62,.04);border:1px solid rgba(200,150,62,.18);border-radius:6px;padding:18px 24px;display:flex;align-items:flex-start;gap:12px;">
       <span style="color:var(--gold);font-size:11px;flex-shrink:0;margin-top:1px;">◎</span>
@@ -402,6 +438,7 @@ footer{padding:36px 48px;border-top:1px solid var(--border);display:flex;align-i
             <option value="Presage Consult — $1,200">Presage Consult — $1,200 (existing business)</option>
             <option value="Presage Audit — $2,500">Presage Audit — $2,500 (full deep-dive)</option>
             <option value="Presage Retainer — $600/mo">Presage Retainer — $600/mo (ongoing monitoring)</option>
+            <option value="Implementation Surge — $5,000–$10,000">Implementation Surge — $5,000–$10,000 (add-on: hands-on implementation)</option>
             <option value="Not sure yet">Not sure yet — help me decide</option>
           </select>
         </div>
