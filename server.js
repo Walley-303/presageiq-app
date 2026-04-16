@@ -4,6 +4,7 @@ const path = require('path');
 const cron = require('node-cron');
 const { makeCollectors } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
+const { computeAndStore } = require('./opportunityScore');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -158,6 +159,8 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_menu_items TEXT`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_photo_subjects TEXT`);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS opportunity_score NUMERIC(5,2)`);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS score_breakdown JSONB`);
 
   // ── Menu uploads (agent/business-uploaded menu photos) ───────────────────────
   await pool.query(`
@@ -674,6 +677,40 @@ app.patch('/api/clients/:id', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Database error' }); }
+});
+
+// ── GET /api/intel/score/:clientId ─ Opportunity score (compute or return cached) ─
+app.get('/api/intel/score/:clientId', async (req, res) => {
+  const clientId = parseInt(req.params.clientId, 10);
+  if (!clientId) return res.status(400).json({ error: 'Invalid clientId' });
+  try {
+    const intelRes = await pool.query(`SELECT * FROM business_intel WHERE client_id=$1`, [clientId]);
+    if (!intelRes.rows.length) return res.json({ status: 'not_started' });
+    const row = intelRes.rows[0];
+    if (row.status !== 'complete') return res.json({ status: row.status });
+
+    // Return cached score if already computed
+    if (row.opportunity_score !== null && row.score_breakdown !== null) {
+      const breakdown = typeof row.score_breakdown === 'string'
+        ? JSON.parse(row.score_breakdown)
+        : row.score_breakdown;
+      return res.json({ status: 'complete', opportunity_score: parseFloat(row.opportunity_score), score_breakdown: breakdown });
+    }
+
+    // Parse JSONB fields before passing to scorer
+    ['place_data', 'competitors', 'website_data', 'community_mentions'].forEach(f => {
+      if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
+    });
+
+    const clientRes = await pool.query(`SELECT bizname, name FROM clients WHERE id=$1`, [clientId]);
+    const businessName = clientRes.rows[0]?.bizname || clientRes.rows[0]?.name || 'Unknown';
+
+    const result = await computeAndStore(pool, clientId, row, businessName);
+    return res.json({ status: 'complete', ...result });
+  } catch (err) {
+    console.error('[score] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Fallback ──────────────────────────────────────────────────────────────────
