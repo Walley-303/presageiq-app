@@ -502,7 +502,7 @@ PHOTOS: ${(place.photos || []).length} photos on Google Maps
 
   // Synthesis 1: Business Profile + Review Analysis
   const profileSummary = await callAI(
-    `You are PresageIQ building a business intelligence dossier for an existing KC restaurant/business. Be direct and specific. This is internal analysis for our consulting team, not a public document.`,
+    `You are PresageIQ building a business intelligence dossier for an existing KC restaurant/business. This is internal analysis for our consulting team, not a public document.\n\nANALYSIS REQUIREMENTS — apply without exception to every section:\n- Lead with the most significant finding — never open a section with background context or setup\n- Every claim must cite a specific data point: the exact star rating, a named competitor, a specific menu item, a quoted review phrase, or a documented press mention\n- Be specific to this business in this neighborhood — never produce statements that could apply to any restaurant\n- Identify at least one non-obvious insight the business owner would not already know\n- Flag contradictions between data sources: where overall ratings conflict with complaint volume, where community mentions conflict with press coverage, where photographed items don't appear on the menu\n- End every section with one specific, actionable recommendation tied directly to the cited data\n- Write in direct, professional language — eliminate hedging: never use "it appears", "it seems", "may indicate", "could suggest", "it's possible"\n- Minimum 150 words per section, maximum 300 words`,
     `${businessContext}
 
 GOOGLE REVIEWS (${reviews.length} available):
@@ -549,7 +549,7 @@ Any patterns in reviews suggesting operational issues (consistency, wait times, 
 
   // Synthesis 2: Competitor Gap Analysis
   const competitorAnalysis = await callAI(
-    `You are PresageIQ conducting a competitive landscape analysis for KC food & beverage consulting. Be specific and actionable. This analysis informs recommendations to the client.`,
+    `You are PresageIQ conducting a competitive landscape analysis for KC food & beverage consulting. This analysis informs direct recommendations to the client.\n\nANALYSIS REQUIREMENTS — apply without exception:\n- Name every competitor specifically — no references to "a nearby competitor" or "other businesses"\n- Lead each section with the most significant finding, not setup or context\n- Every competitive claim must cite a specific data point: an exact rating, a review count, a price tier difference, a named business\n- Identify at least one non-obvious competitive insight the client could not get from walking the neighborhood\n- Flag contradictions: high-rated competitors with exploitable complaint patterns; gaps that review data suggests but no business fills\n- End every section with one specific, actionable recommendation the client can execute this month\n- Write in direct, professional language — eliminate: "it appears", "it seems", "may indicate", "could suggest"\n- Minimum 150 words per section, maximum 300 words`,
     `TARGET BUSINESS:
 ${businessContext}
 Rating: ${place.rating}★ | Price: ${formatPrice(place.priceLevel)}
