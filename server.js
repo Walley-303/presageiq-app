@@ -162,6 +162,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS ai_photo_subjects TEXT`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS opportunity_score NUMERIC(5,2)`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS score_breakdown JSONB`);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS social_intel JSONB`);
 
   // ── Menu uploads (agent/business-uploaded menu photos) ───────────────────────
   await pool.query(`
@@ -420,7 +421,7 @@ app.get('/api/intel/business/:clientId', async (req, res) => {
     if (!result.rows.length) return res.json({ status: 'not_started' });
     const row = result.rows[0];
     // Parse JSONB fields
-    ['place_data', 'competitors', 'website_data', 'community_mentions', 'ai_menu_items', 'ai_photo_subjects'].forEach(f => {
+    ['place_data', 'competitors', 'website_data', 'community_mentions', 'ai_menu_items', 'ai_photo_subjects', 'social_intel'].forEach(f => {
       if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
     });
     res.json(row);

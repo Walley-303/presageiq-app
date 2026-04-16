@@ -404,6 +404,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <div class="ai-result-header"><span class="ai-result-label">◎ Review &amp; Reputation Intelligence — PresageIQ</span></div>
           <div id="review-result-body"></div>
         </div>
+        <div id="social-intel-cards" style="display:none;margin-top:12px;flex-direction:column;gap:8px;"></div>
         <div style="margin-top:16px;">
           <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Supplementary Notes</div>
           <textarea class="fta" id="r-notes" placeholder="Add any additional context — staff observations, owner-provided info, in-session notes..." style="min-height:60px;"></textarea>
@@ -1365,6 +1366,46 @@ function startIntelPoll(clientId) {
   }, 5000);
 }
 
+function renderSocialIntelCards(socialIntel) {
+  const container = document.getElementById('social-intel-cards');
+  if (!container) return;
+  const { instagram, tiktok, youtube } = socialIntel || {};
+  const cards = [];
+
+  if (instagram?.handle) {
+    const igLines = [
+      `<strong>${escHtml(instagram.handle)}</strong>`,
+      instagram.bio ? `<span style="color:var(--text2)">${escHtml(instagram.bio.substring(0,120))}</span>` : '',
+      `Posts: ${instagram.recentPosts?.length || 0}` +
+        (instagram.engagementRate ? ` &nbsp;·&nbsp; Engagement: ${escHtml(instagram.engagementRate)}` : '') +
+        (instagram.postingConsistency && instagram.postingConsistency !== 'unknown' ? ` &nbsp;·&nbsp; Posting: ${escHtml(instagram.postingConsistency)}` : '') +
+        (instagram.followerQuality && instagram.followerQuality !== 'unknown' ? ` &nbsp;·&nbsp; Followers: ${escHtml(instagram.followerQuality)}` : ''),
+      instagram.hashtags?.length ? `Top tags: ${instagram.hashtags.map(t => escHtml(t)).join(', ')}` : '',
+      `Sentiment: ${escHtml(instagram.overallSentiment || 'unknown')}`,
+    ].filter(Boolean).join('<br>');
+    cards.push(`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;font-size:11px;line-height:1.7;"><div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal2);margin-bottom:6px;">Instagram</div>${igLines}</div>`);
+  }
+
+  if (tiktok?.videos?.length) {
+    const ttLines = tiktok.videos.slice(0,4).map(v =>
+      `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${v.creator ? `<span style="color:var(--teal2)">${escHtml(v.creator)}</span>: ` : ''}${escHtml(v.title.substring(0,80))} <span style="color:var(--text3)">[${escHtml(v.sentiment)}]</span></div>`
+    ).join('');
+    cards.push(`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;font-size:11px;"><div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal2);margin-bottom:6px;">TikTok &nbsp;·&nbsp; ${tiktok.videos.length} result(s) &nbsp;·&nbsp; signal: ${escHtml(tiktok.signalStrength)} &nbsp;·&nbsp; sentiment: ${escHtml(tiktok.overallSentiment)}</div>${ttLines}</div>`);
+  }
+
+  if (youtube?.videos?.length) {
+    const ytLines = youtube.videos.slice(0,4).map(v =>
+      `<div style="padding:4px 0;border-bottom:1px solid var(--border);"><a href="${escHtml(v.url)}" target="_blank" rel="noopener" style="color:var(--teal2);text-decoration:none;">${escHtml(v.title.substring(0,80))}</a> <span style="color:var(--text3);">${v.views != null ? `(${Number(v.views).toLocaleString()} views) ` : ''}[${escHtml(v.sentiment)}]</span></div>`
+    ).join('');
+    cards.push(`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;font-size:11px;"><div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal2);margin-bottom:6px;">YouTube &nbsp;·&nbsp; ${youtube.videos.length} video(s) &nbsp;·&nbsp; sentiment: ${escHtml(youtube.overallSentiment)}</div>${ytLines}</div>`);
+  }
+
+  if (cards.length) {
+    container.innerHTML = `<div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Social Intelligence</div>` + cards.join('');
+    container.style.display = 'flex';
+  }
+}
+
 function silentlyPopulateIntel(data) {
   const place = data.place_data || {};
   const competitors = data.competitors || [];
@@ -1387,6 +1428,7 @@ function silentlyPopulateIntel(data) {
     if (competitors.length > 0) renderCompetitorCards(competitors, data.place_data?.id);
     markDone('competitors');
   }
+  if (data.social_intel) renderSocialIntelCards(data.social_intel);
 }
 
 // ── Refresh Intel (re-scan without losing client profile) ───────────────────

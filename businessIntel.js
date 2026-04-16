@@ -353,18 +353,24 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       websiteData = await scrapeWebsite(place.websiteUri);
     }
 
-    // ── 4. Community mentions + web search + Instagram (parallel) ──────────
+    // ── 4. Community mentions + web search + social intel (parallel) ──────────
     let communityMentions = [];
     let webSearchResults = [];
     let instagramData = null;
+    let tiktokData = null;
+    let youtubeData = null;
     try {
-      [communityMentions, webSearchResults, instagramData] = await Promise.all([
+      [communityMentions, webSearchResults, instagramData, tiktokData, youtubeData] = await Promise.all([
         getCommunityMentions(pool, businessName).catch(() => []),
         searchAndScrapeWeb(businessName, neighborhood).catch(() => []),
-        scrapeInstagram(businessName).catch(() => ({ handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown' })),
+        scrapeInstagram(businessName).catch(() => ({ handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown', hashtags: [], engagementRate: null, postingConsistency: 'unknown', followerQuality: 'unknown' })),
+        scrapeTikTok(businessName, neighborhood).catch(() => ({ videos: [], overallSentiment: 'unknown', signalStrength: 'none' })),
+        searchYouTube(businessName, neighborhood).catch(() => ({ videos: [], overallSentiment: 'unknown' })),
       ]);
       if (webSearchResults.length) console.log(`[intel] Web search: found ${webSearchResults.length} result(s)`);
       if (instagramData?.handle) console.log(`[intel] Instagram: ${instagramData.handle}`);
+      if (tiktokData?.videos?.length) console.log(`[intel] TikTok: ${tiktokData.videos.length} result(s)`);
+      if (youtubeData?.videos?.length) console.log(`[intel] YouTube: ${youtubeData.videos.length} video(s)`);
     } catch (e) { /* non-fatal */ }
 
     // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
@@ -394,8 +400,9 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
         place_id=$1, place_data=$2, competitors=$3,
         website_data=$4, community_mentions=$5,
         ai_photo_subjects=$6, ai_menu_items=$7,
+        social_intel=$8,
         status='synthesizing'
-      WHERE client_id=$8
+      WHERE client_id=$9
     `, [
       place.id,
       JSON.stringify(place),
@@ -404,11 +411,12 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       JSON.stringify(communityMentions),
       photoSubjects ? JSON.stringify(photoSubjects) : null,
       menuItems ? JSON.stringify(menuItems) : null,
+      JSON.stringify({ instagram: instagramData, tiktok: tiktokData, youtube: youtubeData }),
       clientId,
     ]);
 
     // ── 7. AI synthesis ─────────────────────────────────────────────────────
-    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData);
+    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData, tiktokData, youtubeData);
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -418,7 +426,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
 }
 
 // ── AI Synthesis ──────────────────────────────────────────────────────────────
-async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults = [], instagramData = null) {
+async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults = [], instagramData = null, tiktokData = null, youtubeData = null) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     await pool.query(`UPDATE business_intel SET status='error', error_message=$1 WHERE client_id=$2`,
@@ -463,12 +471,28 @@ async function synthesizeIntel(pool, clientId, place, competitors, websiteData, 
     : 'No mentions found in web search or KC press sources.';
 
   const instagramContext = instagramData?.handle
-    ? `INSTAGRAM / SOCIAL PRESENCE:\nHandle: ${instagramData.handle}\nBio: ${instagramData.bio || 'N/A'}\nRecent Posts (${instagramData.recentPosts.length}):\n` +
+    ? `INSTAGRAM:\nHandle: ${instagramData.handle}\nBio: ${instagramData.bio || 'N/A'}\nEngagement Rate: ${instagramData.engagementRate || 'N/A'} | Follower Quality: ${instagramData.followerQuality || 'unknown'} | Posting: ${instagramData.postingConsistency || 'unknown'}\nTop Hashtags: ${instagramData.hashtags?.length ? instagramData.hashtags.join(', ') : 'none detected'}\nRecent Posts (${instagramData.recentPosts.length}):\n` +
       instagramData.recentPosts.slice(0, 8).map(p =>
         `- "${(p.caption || '').substring(0, 120)}" [${p.sentiment || 'neutral'}]${p.engagement ? ` (${p.engagement.likes} likes, ${p.engagement.comments} comments)` : ''}`
       ).join('\n') +
-      `\nOverall Social Sentiment: ${instagramData.overallSentiment || 'unknown'}`
+      `\nOverall Instagram Sentiment: ${instagramData.overallSentiment || 'unknown'}`
     : 'Instagram: no public profile found or not accessible.';
+
+  const tiktokContext = tiktokData?.videos?.length
+    ? `TIKTOK (${tiktokData.videos.length} public result(s), signal: ${tiktokData.signalStrength}):\n` +
+      tiktokData.videos.slice(0, 6).map(v =>
+        `- ${v.creator || 'unknown'}: "${v.title}" — ${v.description.substring(0, 150)} [${v.sentiment}]`
+      ).join('\n') +
+      `\nOverall TikTok Sentiment: ${tiktokData.overallSentiment}`
+    : 'TikTok: no public content found for this business.';
+
+  const youtubeContext = youtubeData?.videos?.length
+    ? `YOUTUBE (${youtubeData.videos.length} video(s)):\n` +
+      youtubeData.videos.slice(0, 5).map(v =>
+        `- "${v.title}" by ${v.channel}${v.views != null ? ` (${v.views.toLocaleString()} views)` : ''} [${v.sentiment}]\n  ${v.description.substring(0, 150)}`
+      ).join('\n') +
+      `\nOverall YouTube Sentiment: ${youtubeData.overallSentiment}`
+    : 'YouTube: no videos found for this business.';
 
   const menuContext = websiteData?.menuText
     ? `MENU PAGE:\n${websiteData.menuText.substring(0, 3000)}`
@@ -521,6 +545,10 @@ WEB SEARCH & KC PRESS COVERAGE:
 ${webSearchText}
 
 ${instagramContext}
+
+${tiktokContext}
+
+${youtubeContext}
 
 Generate a structured business intelligence report. Use ** for section headers.
 
@@ -754,11 +782,186 @@ async function searchAndScrapeWeb(businessName, neighborhood) {
   return allResults;
 }
 
+// ── TikTok public content discovery via Google Custom Search ─────────────────
+// Uses site:tiktok.com filter — no TikTok auth required, no fake accounts.
+async function scrapeTikTok(businessName, neighborhood) {
+  const result = { videos: [], overallSentiment: 'unknown', signalStrength: 'none' };
+  const searchKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const searchCx  = process.env.GOOGLE_SEARCH_CX;
+  if (!searchKey || !searchCx) return result;
+
+  try {
+    const params = new URLSearchParams({
+      key: searchKey, cx: searchCx,
+      q: `"${businessName}" ${neighborhood || 'Kansas City'} site:tiktok.com`,
+      num: '10',
+    });
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return result;
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) return result;
+
+    result.signalStrength = items.length >= 5 ? 'strong' : items.length >= 2 ? 'moderate' : 'weak';
+    result.videos = items.map(item => ({
+      title: item.title || '',
+      description: (item.snippet || '').substring(0, 300),
+      creator: (() => {
+        const m = (item.link || '').match(/tiktok\.com\/@([^/?#]+)/);
+        return m ? '@' + m[1] : null;
+      })(),
+      url: item.link || '',
+      views: null, // not available via CSE
+      sentiment: 'neutral',
+    }));
+
+    // Sentiment analysis on video descriptions
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey && result.videos.length > 0) {
+      try {
+        const snippets = result.videos.map((v, i) => `${i+1}. ${v.title} — ${v.description}`).join('\n');
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini', max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Analyze the sentiment of each TikTok result below for a business called "${businessName}". Output ONLY JSON: {"videos": [{"index": 1, "sentiment": "positive"}, ...], "overall": "positive"}. Sentiments: positive, neutral, negative.\n\nResults:\n${snippets}`,
+            }],
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const aiData = await aiRes.json();
+        const raw = aiData.choices?.[0]?.message?.content || '';
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          result.overallSentiment = parsed.overall || 'neutral';
+          (parsed.videos || []).forEach(v => {
+            if (result.videos[v.index - 1]) result.videos[v.index - 1].sentiment = v.sentiment;
+          });
+        }
+      } catch (e) { /* sentiment optional */ }
+    }
+  } catch (e) {
+    console.warn(`[intel] TikTok search failed: ${e.message}`);
+  }
+
+  console.log(`[intel] TikTok: ${result.videos.length} result(s), signal: ${result.signalStrength}, sentiment: ${result.overallSentiment}`);
+  return result;
+}
+
+// ── YouTube Data API v3 search ────────────────────────────────────────────────
+// Requires YouTube Data API v3 enabled in GCP for the same API key.
+async function searchYouTube(businessName, neighborhood) {
+  const result = { videos: [], overallSentiment: 'unknown' };
+  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+  if (!apiKey) return result;
+
+  try {
+    // Step 1: Search for videos
+    const searchParams = new URLSearchParams({
+      key: apiKey,
+      q: `"${businessName}" ${neighborhood || 'Kansas City'}`,
+      part: 'snippet',
+      type: 'video',
+      maxResults: '8',
+      relevanceLanguage: 'en',
+      regionCode: 'US',
+    });
+    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!searchRes.ok) {
+      const errBody = await searchRes.json().catch(() => ({}));
+      console.warn(`[intel] YouTube search ${searchRes.status}: ${errBody.error?.message || searchRes.statusText}`);
+      return result;
+    }
+    const searchData = await searchRes.json();
+    const items = searchData.items || [];
+    if (!items.length) return result;
+
+    // Step 2: Fetch view counts for each video
+    const videoIds = items.map(i => i.id?.videoId).filter(Boolean);
+    let statsMap = {};
+    if (videoIds.length) {
+      const statsParams = new URLSearchParams({
+        key: apiKey,
+        id: videoIds.join(','),
+        part: 'statistics',
+      });
+      const statsRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${statsParams}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        (statsData.items || []).forEach(v => {
+          statsMap[v.id] = parseInt(v.statistics?.viewCount || '0', 10);
+        });
+      }
+    }
+
+    result.videos = items
+      .filter(i => i.id?.videoId)
+      .map(i => ({
+        title: i.snippet?.title || '',
+        description: (i.snippet?.description || '').substring(0, 300),
+        channel: i.snippet?.channelTitle || '',
+        date: i.snippet?.publishedAt ? i.snippet.publishedAt.substring(0, 10) : null,
+        views: statsMap[i.id.videoId] || null,
+        url: `https://www.youtube.com/watch?v=${i.id.videoId}`,
+        sentiment: 'neutral',
+      }));
+
+    // Sentiment analysis on titles + descriptions
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey && result.videos.length > 0) {
+      try {
+        const snippets = result.videos.map((v, i) => `${i+1}. ${v.title} — ${v.description}`).join('\n');
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini', max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Analyze the sentiment of each YouTube video below about a business called "${businessName}". Output ONLY JSON: {"videos": [{"index": 1, "sentiment": "positive"}, ...], "overall": "positive"}. Sentiments: positive, neutral, negative.\n\nVideos:\n${snippets}`,
+            }],
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const aiData = await aiRes.json();
+        const raw = aiData.choices?.[0]?.message?.content || '';
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          result.overallSentiment = parsed.overall || 'neutral';
+          (parsed.videos || []).forEach(v => {
+            if (result.videos[v.index - 1]) result.videos[v.index - 1].sentiment = v.sentiment;
+          });
+        }
+      } catch (e) { /* sentiment optional */ }
+    }
+  } catch (e) {
+    console.warn(`[intel] YouTube search failed: ${e.message}`);
+  }
+
+  console.log(`[intel] YouTube: ${result.videos.length} video(s), sentiment: ${result.overallSentiment}`);
+  return result;
+}
+
 // ── Instagram public page scraping ──────────────────────────────────────────
 // Searches for the business Instagram via Google, fetches public page, extracts
-// bio and recent post captions. No auth required for public profiles.
+// bio, recent post captions, engagement metrics, and posting patterns.
+// No auth required for public profiles.
 async function scrapeInstagram(businessName) {
-  const result = { handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown' };
+  const result = {
+    handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown',
+    hashtags: [], engagementRate: null, postingConsistency: 'unknown', followerQuality: 'unknown',
+  };
 
   // Step 1: Find Instagram handle via Google search
   const searchKey = process.env.GOOGLE_SEARCH_API_KEY;
@@ -823,15 +1026,56 @@ async function scrapeInstagram(businessName) {
         if (user) {
           result.bio = user.biography || result.bio;
           result.handle = '@' + user.username;
+          const followerCount = user.edge_followed_by?.count || 0;
           const edges = user.edge_owner_to_timeline_media?.edges || [];
-          result.recentPosts = edges.slice(0, 12).map(e => ({
+          result.recentPosts = edges.slice(0, 24).map(e => ({
             caption: e.node?.edge_media_to_caption?.edges?.[0]?.node?.text || '',
+            timestamp: e.node?.taken_at_timestamp || null,
             engagement: {
               likes: e.node?.edge_liked_by?.count || 0,
               comments: e.node?.edge_media_to_comment?.count || 0,
             },
             sentiment: 'neutral',
           }));
+
+          // Top 5 hashtags by frequency
+          const tagCounts = {};
+          result.recentPosts.forEach(p => {
+            const tags = (p.caption.match(/#(\w+)/g) || []).map(t => t.toLowerCase());
+            tags.forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+          });
+          result.hashtags = Object.entries(tagCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([tag]) => tag);
+
+          // Engagement rate
+          if (followerCount > 0 && result.recentPosts.length > 0) {
+            const avgLikes = result.recentPosts.reduce((s, p) => s + p.engagement.likes, 0) / result.recentPosts.length;
+            const avgComments = result.recentPosts.reduce((s, p) => s + p.engagement.comments, 0) / result.recentPosts.length;
+            const rate = ((avgLikes + avgComments) / followerCount) * 100;
+            result.engagementRate = rate.toFixed(2) + '%';
+            result.followerQuality = (followerCount > 5000 && rate < 0.5) ? 'suspicious' : rate >= 3 ? 'authentic' : rate >= 1 ? 'average' : 'low';
+          }
+
+          // Posting consistency from timestamps
+          const timestamps = result.recentPosts
+            .map(p => p.timestamp)
+            .filter(Boolean)
+            .sort((a, b) => b - a);
+          if (timestamps.length >= 2) {
+            const now = Math.floor(Date.now() / 1000);
+            const daysSinceLast = (now - timestamps[0]) / 86400;
+            const gaps = [];
+            for (let i = 0; i < timestamps.length - 1; i++) {
+              gaps.push((timestamps[i] - timestamps[i+1]) / 86400);
+            }
+            const avgGap = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+            if (daysSinceLast > 90) result.postingConsistency = 'inactive';
+            else if (avgGap <= 7) result.postingConsistency = 'consistent';
+            else if (avgGap <= 14) result.postingConsistency = 'moderate';
+            else result.postingConsistency = 'sporadic';
+          }
         }
       } catch (e) { /* JSON parse failed — use meta fallback */ }
     }
@@ -878,8 +1122,8 @@ async function scrapeInstagram(businessName) {
     }
   }
 
-  console.log(`[intel] Instagram: ${result.handle || 'not found'}, ${result.recentPosts.length} posts, sentiment: ${result.overallSentiment}`);
+  console.log(`[intel] Instagram: ${result.handle || 'not found'}, ${result.recentPosts.length} posts, sentiment: ${result.overallSentiment}, engagement: ${result.engagementRate || 'n/a'}, consistency: ${result.postingConsistency}`);
   return result;
 }
 
-module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram };
+module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram, scrapeTikTok, searchYouTube };
