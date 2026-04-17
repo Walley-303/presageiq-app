@@ -77,6 +77,191 @@ async function findCompetitors(lat, lng, radiusMeters = 8000) {
   return data?.places || [];
 }
 
+// ── Collect all available Google Maps reviews for a place ────────────────────
+// The Places API (New) returns a maximum of 5 reviews per request.
+// We make two requests with different sort orders (NEWEST and most-relevant)
+// and deduplicate, yielding up to 10 unique reviews per business.
+async function scrapeAllGoogleReviews(placeId, businessName) {
+  const result = { reviews: [], totalCaptured: 0, totalAvailable: 0 };
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey || !placeId) return result;
+
+  const seenTexts = new Set();
+  const absorb = (rawReviews) => {
+    for (const r of (rawReviews || [])) {
+      const text = (r.text?.text || '').trim();
+      if (!text || seenTexts.has(text)) continue;
+      seenTexts.add(text);
+      result.reviews.push({
+        text,
+        rating: r.rating || null,
+        date: r.relativePublishTimeDescription || null,
+        authorName: r.authorAttribution?.displayName || 'Anonymous',
+        publishTime: r.publishTime || null,
+        source: 'google',
+      });
+    }
+  };
+
+  // Request 1: sorted by most recent
+  try {
+    const res = await fetch(
+      `${PLACES_BASE}/places/${placeId}?fields=userRatingCount,reviews&reviewSort=NEWEST`,
+      {
+        headers: { 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': 'userRatingCount,reviews' },
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      result.totalAvailable = data.userRatingCount || 0;
+      absorb(data.reviews);
+    }
+  } catch (e) { console.warn(`[intel] Google reviews (newest) failed: ${e.message}`); }
+
+  // Request 2: default sort (most relevant) — may return a different subset
+  try {
+    const res = await fetch(
+      `${PLACES_BASE}/places/${placeId}?fields=reviews`,
+      {
+        headers: { 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': 'reviews' },
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      absorb(data.reviews);
+    }
+  } catch (e) { /* non-fatal — use whatever we already have */ }
+
+  result.totalCaptured = result.reviews.length;
+  console.log(`[intel] Google reviews: ${result.totalCaptured} captured (${result.totalAvailable} total on Google)`);
+  return result;
+}
+
+// ── Scrape Yelp public reviews for a business ─────────────────────────────────
+// Finds the Yelp listing via Google CSE (site:yelp.com/biz), then fetches the
+// public Yelp page and extracts aggregate rating and up to 40 reviews.
+// No Yelp API key required — public pages only.
+async function scrapeYelpReviews(businessName, address) {
+  const result = { reviews: [], yelpRating: null, reviewCount: 0 };
+  const searchKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const searchCx  = process.env.GOOGLE_SEARCH_CX;
+  if (!searchKey || !searchCx) return result;
+
+  // Step 1: Find Yelp listing URL via Google CSE
+  let yelpUrl = null;
+  try {
+    const city = address ? address.split(',')[0].trim() : 'Kansas City';
+    const params = new URLSearchParams({
+      key: searchKey, cx: searchCx,
+      q: `"${businessName}" ${city} site:yelp.com/biz`,
+      num: '3',
+    });
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const item = (data.items || []).find(i => i.link?.includes('yelp.com/biz/'));
+      if (item) yelpUrl = item.link.split('?')[0]; // strip query params
+    }
+  } catch (e) { console.warn(`[intel] Yelp search failed: ${e.message}`); }
+
+  if (!yelpUrl) {
+    console.log(`[intel] Yelp listing not found for "${businessName}"`);
+    return result;
+  }
+
+  // Step 2: Fetch public Yelp page
+  try {
+    const res = await fetch(yelpUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) { console.warn(`[intel] Yelp fetch ${res.status}`); return result; }
+    const html = await res.text();
+
+    // Extract aggregate rating from JSON-LD structured data
+    const jsonLdBlocks = [...html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
+    for (const block of jsonLdBlocks) {
+      try {
+        const json = JSON.parse(block[1]);
+        const objs = Array.isArray(json) ? json : [json];
+        for (const obj of objs) {
+          if (obj?.aggregateRating) {
+            result.yelpRating = parseFloat(obj.aggregateRating.ratingValue) || null;
+            result.reviewCount = parseInt(obj.aggregateRating.reviewCount || obj.aggregateRating.ratingCount || '0', 10);
+            break;
+          }
+        }
+        if (result.yelpRating) break;
+      } catch (e) { /* parse failed — try next block */ }
+    }
+
+    // Fallback: meta itemprop attributes
+    if (!result.yelpRating) {
+      const rv = html.match(/itemprop="ratingValue"[^>]*content="([^"]+)"/);
+      const rc = html.match(/itemprop="reviewCount"[^>]*content="([^"]+)"/);
+      if (rv) result.yelpRating = parseFloat(rv[1]);
+      if (rc) result.reviewCount = parseInt(rc[1], 10);
+    }
+
+    // Extract reviews from Next.js embedded data (__NEXT_DATA__)
+    const nextMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (nextMatch) {
+      try {
+        const parsed = JSON.parse(nextMatch[1]);
+        // Yelp Next.js page props path varies — try multiple known paths
+        const pp = parsed?.props?.pageProps;
+        const reviewsList =
+          pp?.reviewFeedQueryProps?.reviews ||
+          pp?.reviews ||
+          parsed?.props?.initialData?.reviewFeedQueryProps?.reviews;
+        if (Array.isArray(reviewsList) && reviewsList.length) {
+          result.reviews = reviewsList.slice(0, 40).map(r => ({
+            text: (r.comment?.text || r.text || '').trim(),
+            rating: r.rating || null,
+            date: r.localizedDate || r.createdAt || null,
+            location: r.user?.locationDescription || null,
+            source: 'yelp',
+          })).filter(r => r.text.length > 10);
+        }
+      } catch (e) { /* Next.js parse failed */ }
+    }
+
+    // Fallback: extract from window.DATA_FOR_SPEX or similar Yelp state blobs
+    if (result.reviews.length === 0) {
+      const stateMatch = html.match(/window\.__DATA_FOR_SPEX\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+      if (stateMatch) {
+        try {
+          const parsed = JSON.parse(stateMatch[1]);
+          const reviews = parsed?.bizDetailsProps?.reviewFeedProps?.reviews ||
+                          parsed?.reviews;
+          if (Array.isArray(reviews)) {
+            result.reviews = reviews.slice(0, 40).map(r => ({
+              text: (r.comment?.text || r.localizedDate || '').trim(),
+              rating: r.rating || null,
+              date: r.localizedDate || null,
+              location: r.user?.city || null,
+              source: 'yelp',
+            })).filter(r => r.text.length > 10);
+          }
+        } catch (e) { /* state parse failed */ }
+      }
+    }
+  } catch (e) {
+    console.warn(`[intel] Yelp scrape failed: ${e.message}`);
+  }
+
+  console.log(`[intel] Yelp: ${result.yelpRating || 'N/A'}★ (${result.reviewCount} total), ${result.reviews.length} reviews captured`);
+  return result;
+}
+
 // ── Scrape website for menu / content ────────────────────────────────────────
 async function scrapeWebsite(url) {
   if (!url) return null;
@@ -314,6 +499,21 @@ function formatReviews(reviews = []) {
   }));
 }
 
+// Combine Google + Yelp reviews, deduplicate by normalized text
+function combineReviews(googleReviews = [], yelpReviews = []) {
+  const normalize = t => t.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 80);
+  const seen = new Set();
+  const combined = [];
+  for (const r of [...googleReviews, ...yelpReviews]) {
+    if (!r.text?.trim()) continue;
+    const key = normalize(r.text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    combined.push(r);
+  }
+  return combined;
+}
+
 // ── Main orchestrator ─────────────────────────────────────────────────────────
 async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
   console.log(`[intel] Starting gather for client ${clientId}: "${businessName}" in ${neighborhood}`);
@@ -353,19 +553,23 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       websiteData = await scrapeWebsite(place.websiteUri);
     }
 
-    // ── 4. Community mentions + web search + social intel (parallel) ──────────
+    // ── 4. Community mentions + web search + social intel + reviews (parallel) ──
     let communityMentions = [];
     let webSearchResults = [];
     let instagramData = null;
     let tiktokData = null;
     let youtubeData = null;
+    let googleReviewData = null;
+    let yelpReviewData = null;
     try {
-      [communityMentions, webSearchResults, instagramData, tiktokData, youtubeData] = await Promise.all([
+      [communityMentions, webSearchResults, instagramData, tiktokData, youtubeData, googleReviewData, yelpReviewData] = await Promise.all([
         getCommunityMentions(pool, businessName).catch(() => []),
         searchAndScrapeWeb(businessName, neighborhood).catch(() => []),
         scrapeInstagram(businessName).catch(() => ({ handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown', hashtags: [], engagementRate: null, postingConsistency: 'unknown', followerQuality: 'unknown' })),
         scrapeTikTok(businessName, neighborhood).catch(() => ({ videos: [], overallSentiment: 'unknown', signalStrength: 'none' })),
         searchYouTube(businessName, neighborhood).catch(() => ({ videos: [], overallSentiment: 'unknown' })),
+        scrapeAllGoogleReviews(place.id, businessName).catch(() => ({ reviews: [], totalCaptured: 0, totalAvailable: 0 })),
+        scrapeYelpReviews(businessName, place.formattedAddress).catch(() => ({ reviews: [], yelpRating: null, reviewCount: 0 })),
       ]);
       if (webSearchResults.length) console.log(`[intel] Web search: found ${webSearchResults.length} result(s)`);
       if (instagramData?.handle) console.log(`[intel] Instagram: ${instagramData.handle}`);
@@ -373,9 +577,24 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       if (youtubeData?.videos?.length) console.log(`[intel] YouTube: ${youtubeData.videos.length} video(s)`);
     } catch (e) { /* non-fatal */ }
 
+    // ── 4b. Combine and deduplicate reviews across Google + Yelp ───────────────
+    const allReviews = combineReviews(
+      googleReviewData?.reviews || place.reviews?.map(r => ({
+        text: r.text?.text || '', rating: r.rating, date: r.relativePublishTimeDescription,
+        authorName: r.authorAttribution?.displayName || 'Anonymous', source: 'google',
+      })) || [],
+      yelpReviewData?.reviews || []
+    );
+    console.log(`[intel] Combined reviews: ${allReviews.length} total (Google: ${(googleReviewData?.reviews || []).length}, Yelp: ${(yelpReviewData?.reviews || []).length})`);
+    // Supplement place with Yelp aggregate if Yelp found it
+    if (yelpReviewData?.yelpRating) {
+      place._yelpRating = yelpReviewData.yelpRating;
+      place._yelpReviewCount = yelpReviewData.reviewCount;
+    }
+
     // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
     const openaiKey = process.env.OPENAI_API_KEY;
-    const reviewText = (place.reviews || []).map(r => r.text?.text || '').join('\n\n');
+    const reviewText = allReviews.map(r => r.text || '').filter(Boolean).join('\n\n');
     let photoSubjects = null;
     let menuItems = null;
     try {
@@ -416,7 +635,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
     ]);
 
     // ── 7. AI synthesis ─────────────────────────────────────────────────────
-    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData, tiktokData, youtubeData);
+    await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData, tiktokData, youtubeData, allReviews);
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -426,7 +645,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
 }
 
 // ── AI Synthesis ──────────────────────────────────────────────────────────────
-async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults = [], instagramData = null, tiktokData = null, youtubeData = null) {
+async function synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults = [], instagramData = null, tiktokData = null, youtubeData = null, allReviews = null) {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     await pool.query(`UPDATE business_intel SET status='error', error_message=$1 WHERE client_id=$2`,
@@ -451,8 +670,20 @@ async function synthesizeIntel(pool, clientId, place, competitors, websiteData, 
     return data.choices?.[0]?.message?.content || '';
   };
 
-  const reviews = formatReviews(place.reviews || []);
-  const reviewText = reviews.map(r => `[${r.rating}★ · ${r.time}] ${r.author}: "${r.text}"`).join('\n\n');
+  // Build review corpus: prefer the full combined set, fall back to place.reviews
+  const reviewCorpus = allReviews?.length
+    ? allReviews
+    : formatReviews(place.reviews || []).map(r => ({
+        text: r.text, rating: r.rating, date: r.time,
+        authorName: r.author, source: 'google',
+      }));
+  const googleCount = reviewCorpus.filter(r => r.source === 'google').length;
+  const yelpCount   = reviewCorpus.filter(r => r.source === 'yelp').length;
+  const reviewText = reviewCorpus.map(r =>
+    r.source === 'yelp'
+      ? `[${r.rating != null ? r.rating + '★ · ' : ''}Yelp${r.location ? ' · ' + r.location : ''}${r.date ? ' · ' + r.date : ''}] "${r.text}"`
+      : `[${r.rating != null ? r.rating + '★ · ' : ''}Google${r.date ? ' · ' + r.date : ''}] ${r.authorName || 'Anonymous'}: "${r.text}"`
+  ).join('\n\n');
   const competitorSummary = competitors
     .filter(c => c.id !== place.id)
     .slice(0, 15)
@@ -529,8 +760,8 @@ PHOTOS: ${(place.photos || []).length} photos on Google Maps
     `You are PresageIQ building a business intelligence dossier for an existing KC restaurant/business. This is internal analysis for our consulting team, not a public document.\n\nANALYSIS REQUIREMENTS — apply without exception to every section:\n- Lead with the most significant finding — never open a section with background context or setup\n- Every claim must cite a specific data point: the exact star rating, a named competitor, a specific menu item, a quoted review phrase, or a documented press mention\n- Be specific to this business in this neighborhood — never produce statements that could apply to any restaurant\n- Identify at least one non-obvious insight the business owner would not already know\n- Flag contradictions between data sources: where overall ratings conflict with complaint volume, where community mentions conflict with press coverage, where photographed items don't appear on the menu\n- End every section with one specific, actionable recommendation tied directly to the cited data\n- Write in direct, professional language — eliminate hedging: never use "it appears", "it seems", "may indicate", "could suggest", "it's possible"\n- Minimum 150 words per section, maximum 300 words`,
     `${businessContext}
 
-GOOGLE REVIEWS (${reviews.length} available):
-${reviewText || 'No reviews returned by API.'}
+REVIEWS — Analyzing ${reviewCorpus.length} customer reviews across Google${yelpCount > 0 ? ' and Yelp' : ''} for ${place.displayName?.text || businessName} (${googleCount} Google${yelpCount > 0 ? `, ${yelpCount} Yelp` : ''}):
+${reviewText || 'No reviews captured.'}
 
 ${menuContext}
 
@@ -585,7 +816,7 @@ Rating: ${place.rating}★ | Price: ${formatPrice(place.priceLevel)}
 COMPETITORS WITHIN 5 MILES (${competitors.length} found):
 ${competitorSummary}
 
-TARGET'S TOP REVIEWS (context):
+TARGET'S TOP REVIEWS — ${reviewCorpus.length} reviews across Google${yelpCount > 0 ? ' and Yelp' : ''} (sample):
 ${reviewText.substring(0, 1500) || 'Limited review data.'}
 
 Analyze the competitive landscape. Use ** for section headers.
@@ -1126,4 +1357,4 @@ async function scrapeInstagram(businessName) {
   return result;
 }
 
-module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram, scrapeTikTok, searchYouTube };
+module.exports = { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram, scrapeTikTok, searchYouTube, scrapeAllGoogleReviews, scrapeYelpReviews };
