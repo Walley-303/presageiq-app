@@ -389,6 +389,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <button class="run-btn muted" onclick="skipModule('reviews','N/A')">N/A</button>
         </div>
         <div id="review-intel-status" style="font-size:11px;color:var(--text3);padding:4px 0;margin-bottom:10px;min-height:16px;"></div>
+        <div id="refresh-progress-banner" style="display:none;background:rgba(200,150,62,.06);border:1px solid rgba(200,150,62,.2);border-radius:4px;padding:12px 16px;margin-bottom:14px;">
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">Full Refresh Running</div>
+          <div id="refresh-progress-msg" style="font-size:11px;color:var(--text2);line-height:1.6;">Running full refresh — this may take 30–60 seconds while all sources are re-scraped...</div>
+          <div style="margin-top:8px;height:2px;background:var(--border);border-radius:1px;overflow:hidden;">
+            <div id="refresh-progress-bar" style="height:100%;background:linear-gradient(90deg,var(--gold),var(--teal2));width:0%;transition:width 1s linear;"></div>
+          </div>
+        </div>
         <div id="biz-profile-card" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:16px 18px;margin-bottom:16px;">
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
             <div><div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">Rating</div><div id="bip-rating" style="font-size:18px;color:var(--gold);font-weight:600;">—</div></div>
@@ -1431,35 +1438,125 @@ function silentlyPopulateIntel(data) {
   if (data.social_intel) renderSocialIntelCards(data.social_intel);
 }
 
-// ── Refresh Intel (re-scan without losing client profile) ───────────────────
+// ── Refresh Intel (wipes all cached intel, runs full fresh scrape) ──────────
+let _refreshInProgress = false;
+let _refreshStart = 0;
+let _refreshBarTimer = null;
+
 async function refreshIntel() {
   if (!currentClientId) return;
-  const ok = confirm('This will run a fresh scan and replace cached intel results. Client profile and session notes will be preserved. Continue?');
+  if (_refreshInProgress) return;
+  const ok = confirm('This will wipe all cached intel and run a full fresh scrape across all sources. Client profile and session notes will be preserved. Continue?');
   if (!ok) return;
 
+  _refreshInProgress = true;
+  _refreshStart = Date.now();
+
+  // Lock button for the full duration
   const btn = document.getElementById('refresh-intel-btn');
   if (btn) { btn.disabled = true; btn.textContent = '↻ Scanning...'; }
 
-  // Clear existing intel displays
-  setIntelStatusBanners('gathering');
+  // Show refresh progress banner
+  const banner = document.getElementById('refresh-progress-banner');
+  const bannerMsg = document.getElementById('refresh-progress-msg');
+  const progressBar = document.getElementById('refresh-progress-bar');
+  if (banner) banner.style.display = 'block';
+  if (bannerMsg) bannerMsg.textContent = 'Running full refresh — this may take 30–60 seconds while all sources are re-scraped...';
+  if (progressBar) progressBar.style.width = '3%';
+
+  // Animate the progress bar to ~90% over 55 seconds (stops short until completion)
+  clearInterval(_refreshBarTimer);
+  _refreshBarTimer = setInterval(() => {
+    if (!progressBar) return;
+    const elapsed = (Date.now() - _refreshStart) / 1000;
+    const pct = Math.min(90, Math.round((elapsed / 55) * 90));
+    progressBar.style.width = pct + '%';
+  }, 1000);
+
+  // Wipe all stale display elements
   const reviewBody = document.getElementById('review-result-body');
   const compBody = document.getElementById('comp-result-body');
+  const socialCards = document.getElementById('social-intel-cards');
+  const bizCard = document.getElementById('biz-profile-card');
+  const compCards = document.getElementById('comp-list-cards');
+  const compAuto = document.getElementById('comp-list-auto');
   if (reviewBody) reviewBody.innerHTML = '';
   if (compBody) compBody.innerHTML = '';
+  if (socialCards) { socialCards.innerHTML = ''; socialCards.style.display = 'none'; }
+  if (bizCard) bizCard.style.display = 'none';
+  if (compCards) compCards.innerHTML = '';
+  if (compAuto) compAuto.style.display = 'none';
+  document.getElementById('review-result')?.classList.remove('visible');
+  document.getElementById('comp-result')?.classList.remove('visible');
+
+  setIntelStatusBanners('gathering');
 
   try {
-    await fetch(`/api/intel/business/${currentClientId}`, {
+    const res = await fetch(`/api/intel/business/${currentClientId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ force: true }),
     });
-    startIntelPoll(currentClientId);
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    startRefreshPoll(currentClientId);
   } catch (e) {
-    setIntelStatusBanners('error');
+    _finishRefresh(false);
     console.error('[intel] Refresh failed:', e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Intel'; }
   }
+}
+
+function _finishRefresh(success) {
+  _refreshInProgress = false;
+  clearInterval(_refreshBarTimer);
+  _refreshBarTimer = null;
+
+  const btn = document.getElementById('refresh-intel-btn');
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Intel'; }
+
+  const banner = document.getElementById('refresh-progress-banner');
+  const progressBar = document.getElementById('refresh-progress-bar');
+  if (progressBar) progressBar.style.width = success ? '100%' : '0%';
+  if (!success && banner) banner.style.display = 'none';
+}
+
+function startRefreshPoll(clientId) {
+  clearInterval(intelPollTimer);
+  intelPollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/intel/business/${clientId}`);
+      const data = await resp.json();
+      const status = data?.status;
+      const msg = data?.status_message;
+
+      // Update progress bar message from live status_message
+      const bannerMsg = document.getElementById('refresh-progress-msg');
+      if (bannerMsg && msg && status !== 'complete') bannerMsg.textContent = msg;
+
+      if (status === 'synthesizing') setIntelStatusBanners('synthesizing');
+
+      if (status === 'complete') {
+        clearInterval(intelPollTimer); intelPollTimer = null;
+        const bannerMsg2 = document.getElementById('refresh-progress-msg');
+        if (bannerMsg2) bannerMsg2.textContent = 'Refresh complete.';
+        setIntelStatusBanners('complete');
+        _finishRefresh(true);
+        // Brief pause so user sees "Refresh complete." before results load
+        setTimeout(() => {
+          const banner = document.getElementById('refresh-progress-banner');
+          if (banner) banner.style.display = 'none';
+          silentlyPopulateIntel(data);
+        }, 1200);
+      }
+
+      if (status === 'error') {
+        clearInterval(intelPollTimer); intelPollTimer = null;
+        setIntelStatusBanners('error');
+        const bannerMsg3 = document.getElementById('refresh-progress-msg');
+        if (bannerMsg3) bannerMsg3.textContent = data?.error_message || 'Refresh failed — check console for details.';
+        _finishRefresh(false);
+      }
+    } catch(e) {}
+  }, 4000);
 }
 
 function populateBizProfileCard(place) {

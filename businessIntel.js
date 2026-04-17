@@ -518,12 +518,18 @@ function combineReviews(googleReviews = [], yelpReviews = []) {
 async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
   console.log(`[intel] Starting gather for client ${clientId}: "${businessName}" in ${neighborhood}`);
 
+  // Convenience: update status_message column without throwing on failure
+  const setMsg = (msg) => pool.query(
+    `UPDATE business_intel SET status_message=$1 WHERE client_id=$2`,
+    [msg, clientId]
+  ).catch(() => {});
+
   // Upsert the intel record to 'gathering' status
   await pool.query(`
-    INSERT INTO business_intel (client_id, business_name, status)
-    VALUES ($1, $2, 'gathering')
+    INSERT INTO business_intel (client_id, business_name, status, status_message)
+    VALUES ($1, $2, 'gathering', 'Locating business on Google Maps...')
     ON CONFLICT (client_id) DO UPDATE SET
-      business_name=$2, status='gathering', error_message=NULL, gathered_at=NOW()
+      business_name=$2, status='gathering', status_message='Locating business on Google Maps...', error_message=NULL, gathered_at=NOW()
   `, [clientId, businessName]);
 
   try {
@@ -535,6 +541,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       return;
     }
     console.log(`[intel] Found: ${place.displayName?.text} (${place.id})`);
+    await setMsg('Gathering Google Places data and finding nearby competitors...');
 
     const lat = place.location?.latitude;
     const lng = place.location?.longitude;
@@ -553,6 +560,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       websiteData = await scrapeWebsite(place.websiteUri);
     }
 
+    await setMsg('Scraping reviews from Google and Yelp...');
     // ── 4. Community mentions + web search + social intel + reviews (parallel) ──
     let communityMentions = [];
     let webSearchResults = [];
@@ -576,6 +584,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       if (tiktokData?.videos?.length) console.log(`[intel] TikTok: ${tiktokData.videos.length} result(s)`);
       if (youtubeData?.videos?.length) console.log(`[intel] YouTube: ${youtubeData.videos.length} video(s)`);
     } catch (e) { /* non-fatal */ }
+    await setMsg('Scanning social signals (Instagram, TikTok, YouTube)...');
 
     // ── 4b. Combine and deduplicate reviews across Google + Yelp ───────────────
     const allReviews = combineReviews(
@@ -592,6 +601,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       place._yelpReviewCount = yelpReviewData.reviewCount;
     }
 
+    await setMsg('Analyzing community intelligence and press coverage...');
     // ── 5. Photo analysis + menu extraction (parallel) ──────────────────────
     const openaiKey = process.env.OPENAI_API_KEY;
     const reviewText = allReviews.map(r => r.text || '').filter(Boolean).join('\n\n');
@@ -634,8 +644,10 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       clientId,
     ]);
 
+    await setMsg('Generating AI analysis across all data sources...');
     // ── 7. AI synthesis ─────────────────────────────────────────────────────
     await synthesizeIntel(pool, clientId, place, competitors, websiteData, communityMentions, businessName, photoSubjects, menuItems, webSearchResults, instagramData, tiktokData, youtubeData, allReviews);
+    await setMsg('Computing opportunity score...');
 
   } catch (e) {
     console.error(`[intel] Gather failed for client ${clientId}:`, e.message);
@@ -844,7 +856,7 @@ In one sentence: how should ${place.displayName?.text || businessName} position 
   // Store synthesized results
   await pool.query(`
     UPDATE business_intel SET
-      ai_profile=$1, ai_competitors=$2, status='complete', gathered_at=NOW()
+      ai_profile=$1, ai_competitors=$2, status='complete', status_message='Refresh complete.', gathered_at=NOW()
     WHERE client_id=$3
   `, [profileSummary, competitorAnalysis, clientId]);
 

@@ -163,6 +163,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS opportunity_score NUMERIC(5,2)`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS score_breakdown JSONB`);
   await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS social_intel JSONB`);
+  await pool.query(`ALTER TABLE business_intel ADD COLUMN IF NOT EXISTS status_message TEXT`);
 
   // ── Menu uploads (agent/business-uploaded menu photos) ───────────────────────
   await pool.query(`
@@ -441,15 +442,31 @@ app.post('/api/intel/business/:clientId', async (req, res) => {
     const businessName = bizname || name;
     if (!businessName) return res.status(400).json({ error: 'No business name on this client record' });
 
-    // If force=true, delete existing intel rows (but NOT client profile data)
+    // If force=true, wipe all cached intel for this client before re-scraping
     const force = req.body?.force === true;
     if (force) {
       await pool.query(`DELETE FROM business_intel WHERE client_id=$1`, [clientId]);
-      console.log(`[intel] Force refresh: deleted existing intel for client ${clientId}`);
+      console.log(`[intel] Force refresh: wiped all cached intel for client ${clientId}`);
     }
 
-    // Fire and return — gathering runs in background
+    // Fire and return — full pipeline runs in background
     gatherBusinessIntel(pool, clientId, businessName, neighborhood)
+      .then(async () => {
+        // Auto-trigger opportunity scoring after gather completes
+        try {
+          const intelRes = await pool.query(`SELECT * FROM business_intel WHERE client_id=$1`, [clientId]);
+          if (!intelRes.rows.length || intelRes.rows[0].status !== 'complete') return;
+          const row = intelRes.rows[0];
+          ['place_data', 'competitors', 'website_data', 'community_mentions'].forEach(f => {
+            if (typeof row[f] === 'string') try { row[f] = JSON.parse(row[f]); } catch(e) {}
+          });
+          await computeAndStore(pool, clientId, row, businessName, neighborhood);
+          await pool.query(`UPDATE business_intel SET status_message='Refresh complete.' WHERE client_id=$1`, [clientId]);
+          console.log(`[intel] Auto-scoring complete for client ${clientId}`);
+        } catch (e) {
+          console.error(`[intel] Auto-scoring failed for client ${clientId}:`, e.message);
+        }
+      })
       .catch(e => console.error(`[intel] Background gather error: ${e.message}`));
 
     res.status(202).json({ started: true, force, message: `Intelligence gathering started for "${businessName}"` });
