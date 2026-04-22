@@ -525,12 +525,15 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
   ).catch(() => {});
 
   // Upsert the intel record to 'gathering' status
+  // Note: status_message is NOT included in INSERT columns — avoids failure if the
+  // column migration hasn't applied yet. setMsg() handles it separately and ignores errors.
   await pool.query(`
-    INSERT INTO business_intel (client_id, business_name, status, status_message)
-    VALUES ($1, $2, 'gathering', 'Locating business on Google Maps...')
+    INSERT INTO business_intel (client_id, business_name, status)
+    VALUES ($1, $2, 'gathering')
     ON CONFLICT (client_id) DO UPDATE SET
-      business_name=$2, status='gathering', status_message='Locating business on Google Maps...', error_message=NULL, gathered_at=NOW()
+      business_name=$2, status='gathering', error_message=NULL, gathered_at=NOW()
   `, [clientId, businessName]);
+  await setMsg('Locating business on Google Maps...');
 
   try {
     // ── 1. Find on Google Maps ──────────────────────────────────────────────

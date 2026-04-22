@@ -1953,15 +1953,26 @@ async function runPressAnalysis() {
     // Step 1: Query DB + trigger live scrape in parallel
     const params = new URLSearchParams({ limit:40 });
     if (nbhd) params.set('neighborhood', nbhd);
+    if (biz)  params.set('q', biz); // filter records to business-specific mentions
+
+    const liveCtrl = new AbortController();
+    const liveTimeout = setTimeout(() => liveCtrl.abort(), 15000);
 
     const [dbData, liveData] = await Promise.allSettled([
       fetch(`/api/intel/community?${params}`).then(r=>r.json()),
       currentClientId
-        ? fetch(`/api/intel/press-live/${currentClientId}`, { method:'POST' }).then(r=>r.ok?r.json():null)
+        ? fetch(`/api/intel/press-live/${currentClientId}`, { method:'POST', signal: liveCtrl.signal })
+            .then(r=>r.ok?r.json():null)
+            .catch(e => { if (e.name !== 'AbortError') console.warn('[press] live scrape error:', e.message); return null; })
+            .finally(() => clearTimeout(liveTimeout))
         : Promise.resolve(null)
     ]);
 
-    if (statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Synthesizing with AI...</span>';
+    if (liveData.status === 'rejected' || (liveData.status === 'fulfilled' && liveData.value === null)) {
+      if (statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Live scrape timed out — using stored records only...</span>';
+    } else {
+      if (statusEl) statusEl.innerHTML='<span style="color:var(--warn);">Synthesizing with AI...</span>';
+    }
 
     const records = (dbData.status==='fulfilled' ? dbData.value?.records : null) || [];
 
@@ -1979,7 +1990,7 @@ async function runPressAnalysis() {
     const fullContext = [dbContext, liveContext, pasted].filter(Boolean).join('\n\n---\n\n');
 
     if (!fullContext) {
-      body.innerHTML='<span style="color:var(--warn);">No intelligence found for this business or neighborhood. Paste content below and re-run, or ensure the client has a business name set.</span>';
+      body.innerHTML=`<span style="color:var(--warn);">No press coverage found for ${biz ? `"${escHtml(biz)}"` : 'this business'}. Paste content below and re-run, or ensure the business name is set in the client profile.</span>`;
       if (statusEl) statusEl.innerHTML='';
       btn.disabled=false; return;
     }
@@ -2000,13 +2011,20 @@ async function runPressAnalysis() {
       pasted ? 'pasted content' : ''
     ].filter(Boolean).join(' + ');
 
-    body.innerHTML = renderAI(aiData.content?.[0]?.text||'') +
+    const aiText = aiData.content?.[0]?.text || '';
+    if (!aiText) {
+      body.innerHTML=`<span style="color:var(--warn);">No press coverage found for ${biz ? `"${escHtml(biz)}"` : 'this business'} in the available sources.</span>`;
+      if (statusEl) statusEl.innerHTML='';
+      btn.disabled=false; return;
+    }
+    body.innerHTML = renderAI(aiText) +
       `<div style="margin-top:12px;font-size:9px;color:var(--text3);border-top:1px solid var(--border);padding-top:8px;">Synthesized from: ${sourceNote||'pasted content'}</div>`;
     if (statusEl) statusEl.innerHTML='<span style="color:var(--teal);">◎ Analysis complete</span>';
     markDone('press');
   } catch(e) {
-    body.innerHTML=`<span style="color:var(--danger);">Analysis failed — ${e.message}</span>`;
-    if (statusEl) statusEl.innerHTML='';
+    console.error('[press] Analysis error:', e);
+    body.innerHTML=`<span style="color:var(--danger);">Press analysis failed — ${e.message || 'unknown error'}. Check the console for details.</span>`;
+    if (statusEl) statusEl.innerHTML='<span style="color:var(--danger);">Analysis failed</span>';
   }
   btn.disabled=false;
 }

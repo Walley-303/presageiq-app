@@ -1646,14 +1646,17 @@ async function testIdea(id) {
   const concept = input?.value.trim();
   if(!concept) { input?.focus(); return; }
 
+  console.log('[idea-tester] Analyzing:', { neighborhood: n.name, concept: concept.substring(0, 120) });
+
   result.style.display = 'block';
   result.innerHTML = `<div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px;"><div class="msg-typing" style="padding:0;display:inline-flex;"><div class="dot-t"></div><div class="dot-t"></div><div class="dot-t"></div></div> Analyzing market fit for ${n.name}...</div>`;
   if(localsPanel) localsPanel.innerHTML = `<div class="locals-empty" style="color:var(--text3);font-size:11px;">Scanning community sources for signals related to your idea...</div>`;
   btn.disabled = true;
 
   // Step 1: AI analysis — runs in parallel with Reddit scan
+  // Note: PROXY_URL (/api/chat) is an OpenAI proxy — use gpt-4o-mini, not Claude models
   const aiPromise = callAI({
-    model: 'claude-sonnet-4-6',
+    model: 'gpt-4o-mini',
     max_tokens: 900,
     system: `You are PresageIQ, a Kansas City market intelligence analyst. Evaluate business concepts against real neighborhood data. Be honest — a bad fit is valuable intel. Be specific and direct. No generic advice.
 
@@ -1688,6 +1691,7 @@ Reference actual neighborhood data. Be specific to ${n.name}.`
   let aiText = '';
   let extractedKeywords = [];
 
+  let aiError = '';
   try {
     const aiData = await aiPromise;
     aiText = aiData.content?.[0]?.text || '';
@@ -1700,6 +1704,8 @@ Reference actual neighborhood data. Be specific to ${n.name}.`
       aiText = aiText.replace(/KEYWORDS:[^\n]*/i, '').trim();
     }
   } catch(e) {
+    aiError = e.message || 'Unknown error';
+    console.error('[idea-tester] AI call failed:', aiError);
     aiText = '';
   }
 
@@ -1711,7 +1717,7 @@ Reference actual neighborhood data. Be specific to ${n.name}.`
         .replace(/\n\n/g, '<br><br>')
         .replace(/\n/g, '<br>');
     } else {
-      result.innerHTML = `<span style="color:var(--danger);font-size:11px;">Analysis failed — try again.</span>`;
+      result.innerHTML = `<span style="color:var(--danger);font-size:11px;">Analysis failed${aiError ? ` — ${aiError}` : ' — try again.'}.</span>`;
     }
   }
 
