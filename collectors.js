@@ -77,32 +77,23 @@ function detectSentiment(text) {
 }
 
 // ── fetchCensusData — ACS 5-year estimates by ZIP (no API key required) ────────
+// No state filter — in=state:XX causes "unknown/unsupported geography hierarchy" with ZCTA queries.
 async function fetchCensusData(zip) {
   if (!zip) return null;
   try {
-    const vars = 'B19013_001E,B01003_001E,B25003_002E,B17001_002E,B02001_002E,B02001_003E,B03001_003E,B15003_001E';
-    const firstTwo = parseInt(zip.substring(0, 2));
-    const primaryState = (firstTwo >= 66 && firstTwo <= 67) ? '20' : '29';
-
-    const tryFetch = async (stateCode) => {
-      const url = `https://api.census.gov/data/2023/acs/acs5?get=${vars}&for=zip+code+tabulation+area:${zip}&in=state:${stateCode}`;
-      console.log(`[census] GET ${url}`);
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      console.log(`[census] status=${res.status} zip=${zip} state=${stateCode}`);
-      if (!res.ok) return null;
+    const url = `https://api.census.gov/data/2023/acs/acs5?get=B19013_001E,B01003_001E,B25003_002E,B17001_002E,B02001_002E,B02001_003E,B03001_003E,B15003_001E&for=zip+code+tabulation+area:${zip}`;
+    console.log(`[census] GET ${url}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    console.log(`[census] status=${res.status} zip=${zip}`);
+    if (!res.ok) {
       const body = await res.text();
-      console.log(`[census] body[0:500]: ${body.substring(0, 500)}`);
-      const parsed = JSON.parse(body);
-      return (Array.isArray(parsed) && parsed.length >= 2) ? parsed : null;
-    };
-
-    let data = await tryFetch(primaryState);
-    if (!data) {
-      const altState = primaryState === '29' ? '20' : '29';
-      console.log(`[census] No rows for state=${primaryState}, retrying with state=${altState}`);
-      data = await tryFetch(altState);
+      console.warn(`[census] error body: ${body.substring(0, 300)}`);
+      return null;
     }
-    if (!data) return null;
+    const body = await res.text();
+    console.log(`[census] body[0:500]: ${body.substring(0, 500)}`);
+    const data = JSON.parse(body);
+    if (!Array.isArray(data) || data.length < 2) return null;
 
     const headers = data[0];
     const values  = data[1];
