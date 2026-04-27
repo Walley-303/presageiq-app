@@ -61,6 +61,23 @@ function num(v) {
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
+  // Step 1: Discover actual field names before bulk fetch
+  try {
+    const discoverRes = await fetch('https://data.kcmo.org/resource/q45j-ejyk.json?$limit=1');
+    console.log(`[seed] neighborhood schema discovery status=${discoverRes.status}`);
+    if (discoverRes.ok) {
+      const discoverData = await discoverRes.json();
+      if (discoverData.length > 0) {
+        console.log(`[seed] neighborhood dataset field names: ${Object.keys(discoverData[0]).join(', ')}`);
+        console.log(`[seed] first record sample: ${JSON.stringify(discoverData[0]).substring(0, 300)}`);
+      } else {
+        console.warn('[seed] schema discovery returned 0 records');
+      }
+    }
+  } catch (e) {
+    console.warn(`[seed] schema discovery failed: ${e.message}`);
+  }
+
   const primaryUrl = 'https://data.kcmo.org/resource/q45j-ejyk.json?$limit=300';
   console.log(`[seed] fetching neighborhoods from ${primaryUrl}`);
   let features = [];
@@ -100,10 +117,29 @@ async function seedNeighborhoods(pool) {
   for (const feature of features) {
     // Handle both flat SODA JSON and GeoJSON Feature formats
     const props = feature.properties || feature;
-    const name = props.name || props.neighborhood_name || props.nbhd_name || props.nhood;
-    if (!name) continue;
 
-    const geom = feature.geometry || feature.the_geom || null;
+    // Try all known field name variations; fall back to first plausible string field
+    const name = props.name
+      || props.neighborhood_name
+      || props.nbhd_name
+      || props.nhood
+      || props.nbhd
+      || props.nhood_name
+      || props.neighborhoodname
+      || props.nbhd_na
+      || props.label
+      || props.nbhd_label
+      || Object.entries(props).find(([k, v]) =>
+          !k.startsWith(':') && typeof v === 'string' && v.length > 2 && v.length < 80 && /^[A-Za-z]/.test(v)
+        )?.[1];
+
+    if (!name) {
+      console.warn(`[seed] no name field found — record keys: ${Object.keys(props).join(', ')}`);
+      continue;
+    }
+
+    // Skip polygon parsing until field names are confirmed — centroid/bbox stay null
+    const geom = feature.geometry || feature.the_geom || props.the_geom || null;
     let polygon = null;
     let centroidLat = null, centroidLng = null;
     let bboxNorth = null, bboxSouth = null, bboxEast = null, bboxWest = null;
@@ -180,7 +216,11 @@ async function seed311Requests(pool, neighborhoodName) {
   const safeName  = neighborhoodName.replace(/'/g, "''");
   const firstWord = neighborhoodName.split(/\s+/)[0].replace(/'/g, "''");
 
-  const BASE = 'https://data.kcmo.org/resource/d4px-6rwg.json';
+  // Try alternate dataset 7at3-sxhp first; d4px-6rwg returning 400
+  const BASES = [
+    'https://data.kcmo.org/resource/7at3-sxhp.json',
+    'https://data.kcmo.org/resource/d4px-6rwg.json',
+  ];
   const TAIL = '&$limit=500&$order=created_date%20DESC';
   const whereClauses = [
     `neighborhood='${safeName}'`,
@@ -189,18 +229,25 @@ async function seed311Requests(pool, neighborhoodName) {
   ];
 
   let rows = [];
-  for (const where of whereClauses) {
-    const url = `${BASE}?$where=${encodeURIComponent(where)}${TAIL}`;
-    console.log(`[311-seed] trying SOQL: ${where}`);
-    try {
-      const res = await fetch(url);
-      console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
-      if (!res.ok) { console.warn(`[311-seed] ${res.status} for SOQL: ${where}`); continue; }
-      const data = await res.json();
-      console.log(`[311-seed] ${data.length} records returned for SOQL: ${where}`);
-      if (data.length > 0) { rows = data; break; }
-    } catch (e) {
-      console.warn(`[311-seed] attempt failed: ${e.message}`);
+  outer:
+  for (const BASE of BASES) {
+    for (const where of whereClauses) {
+      const url = `${BASE}?$where=${encodeURIComponent(where)}${TAIL}`;
+      console.log(`[311-seed] trying ${BASE.split('/').pop()} SOQL: ${where}`);
+      try {
+        const res = await fetch(url);
+        console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.warn(`[311-seed] error body: ${errBody.substring(0, 300)}`);
+          continue;
+        }
+        const data = await res.json();
+        console.log(`[311-seed] ${data.length} records returned for SOQL: ${where}`);
+        if (data.length > 0) { rows = data; break outer; }
+      } catch (e) {
+        console.warn(`[311-seed] attempt failed: ${e.message}`);
+      }
     }
   }
 

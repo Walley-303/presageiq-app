@@ -139,8 +139,11 @@ async function fetchHmdaData() {
 // ── fetchEJScreen — EPA environmental justice indicators for a location ────────
 async function fetchEJScreen(lat, lng, zip, stateFips) {
   if (lat == null || lng == null) return null;
-  try {
-    const tryEndpoint = async (endpoint) => {
+
+  // tryEndpoint catches its own network errors and returns null so the Census
+  // fallback in the if(!data) block always fires when EPA is unreachable.
+  const tryEndpoint = async (endpoint) => {
+    try {
       const url = `https://ejscreen.epa.gov/mapper/${endpoint}?namestr=${lat},${lng}&unit=miles&distance=0.5&areatype=circle&areaid=&f=json`;
       console.log(`[ejscreen] GET ${url}`);
       const res = await fetch(url, {
@@ -152,47 +155,51 @@ async function fetchEJScreen(lat, lng, zip, stateFips) {
       const body = await res.text();
       console.log(`[ejscreen] body[0:500]: ${body.substring(0, 500)}`);
       try { return JSON.parse(body); } catch (e) { console.warn(`[ejscreen] JSON parse failed: ${e.message}`); return null; }
-    };
+    } catch (e) {
+      console.warn(`[ejscreen] ${endpoint} network error: ${e.message}`);
+      return null;
+    }
+  };
 
+  const censusFallback = async () => {
+    if (!zip) return null;
+    console.log(`[ejscreen] EPA blocked, using Census proxy for zip ${zip}`);
+    try {
+      const fallbackUrl = `https://api.census.gov/data/2023/acs/acs5?get=B02001_003E,B17001_002E,B01003_001E&for=zip+code+tabulation+area:${zip}`;
+      const cRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout(10000) });
+      if (!cRes.ok) { console.warn(`[ejscreen] Census proxy status=${cRes.status}`); return null; }
+      const cData = await cRes.json();
+      if (!Array.isArray(cData) || cData.length < 2) return null;
+      const headers = cData[0];
+      const values  = cData[1];
+      const row = Object.fromEntries(headers.map((h, i) => [h, values[i]]));
+      const totalPop     = parseInt(row['B01003_001E']) || 1;
+      const blackPop     = parseInt(row['B02001_003E']) || 0;
+      const belowPoverty = parseInt(row['B17001_002E']) || 0;
+      return {
+        minorityPct:            Math.round(blackPop / totalPop * 1000) / 10,
+        lowIncomePct:           Math.round(belowPoverty / totalPop * 1000) / 10,
+        linguisticIsolationPct: null,
+        ejIndexNationalPct:     null,
+        cancerRiskPct:          null,
+        dieselPM:               null,
+        trafficProximity:       null,
+        leadPaintPct:           null,
+        dataSource:             'census_proxy',
+      };
+    } catch (e) {
+      console.warn(`[ejscreen] Census proxy failed: ${e.message}`);
+      return null;
+    }
+  };
+
+  try {
     let data = await tryEndpoint('ejscreenRESTbroker.aspx');
     if (!data) {
       console.log('[ejscreen] Primary endpoint failed, trying fallback ejscreenRESTbroker2.aspx');
       data = await tryEndpoint('ejscreenRESTbroker2.aspx');
     }
-    if (!data) {
-      if (zip && stateFips) {
-        console.log(`[ejscreen] EPA blocked — falling back to Census ACS demographic proxy for ZIP ${zip}`);
-        try {
-          const censusUrl = `https://api.census.gov/data/2023/acs/acs5?get=B02001_003E,B17001_002E,B01003_001E&for=zip+code+tabulation+area:${zip}&in=state:${stateFips}`;
-          const cRes = await fetch(censusUrl, { signal: AbortSignal.timeout(10000) });
-          if (cRes.ok) {
-            const cData = await cRes.json();
-            if (Array.isArray(cData) && cData.length >= 2) {
-              const headers = cData[0];
-              const values  = cData[1];
-              const row = Object.fromEntries(headers.map((h, i) => [h, values[i]]));
-              const totalPop    = parseInt(row['B01003_001E']) || 1;
-              const blackPop    = parseInt(row['B02001_003E']) || 0;
-              const belowPoverty = parseInt(row['B17001_002E']) || 0;
-              return {
-                minorityPct:            Math.round(blackPop / totalPop * 1000) / 10,
-                lowIncomePct:           Math.round(belowPoverty / totalPop * 1000) / 10,
-                linguisticIsolationPct: null,
-                ejIndexNationalPct:     null,
-                cancerRiskPct:          null,
-                dieselPM:               null,
-                trafficProximity:       null,
-                leadPaintPct:           null,
-                dataSource:             'census_proxy',
-              };
-            }
-          }
-        } catch (e) {
-          console.warn(`[ejscreen] Census proxy failed: ${e.message}`);
-        }
-      }
-      return null;
-    }
+    if (!data) return await censusFallback();
 
     const o = data?.outputs || data?.data || data;
     if (!o || typeof o !== 'object') { console.warn('[ejscreen] No usable output object in response'); return null; }
@@ -370,22 +377,33 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
 }
 
 // ── fetch311Data — Fetch 100 most recent records with no neighborhood filter ───
-// Neighborhood filter omitted until we confirm the correct field name from the API.
+// Tries alternate dataset 7at3-sxhp first; falls back to d4px-6rwg.
 async function fetch311Data(pool, neighborhoodName) {
+  const ENDPOINTS = [
+    'https://data.kcmo.org/resource/7at3-sxhp.json?$limit=100&$order=created_date+DESC',
+    'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=created_date+DESC',
+  ];
+
   let rows = [];
-  try {
-    const url = 'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=created_date+DESC';
-    console.log(`[311] fetching 100 most recent records (no neighborhood filter)`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    console.log(`[311] status=${res.status}`);
-    if (res.ok) {
+  for (const url of ENDPOINTS) {
+    try {
+      console.log(`[311] trying ${url}`);
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      console.log(`[311] status=${res.status} url=${url}`);
+      if (!res.ok) {
+        const errBody = await res.text();
+        console.warn(`[311] error body: ${errBody.substring(0, 300)}`);
+        continue;
+      }
       rows = await res.json();
       if (rows.length > 0) {
         console.log(`[311] first record keys: ${Object.keys(rows[0]).join(', ')}`);
+        break;
       }
+      console.warn(`[311] ${url} returned 0 records, trying next endpoint`);
+    } catch (e) {
+      console.warn(`[311] ${url} failed: ${e.message}`);
     }
-  } catch (e) {
-    console.warn(`[311] fetch failed: ${e.message}`);
   }
 
   const counts = {};
