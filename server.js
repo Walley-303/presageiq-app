@@ -2,10 +2,11 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
-const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop } = require('./collectors');
+const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
 const { DATA_SOURCES, getHolcData } = require('./dataSources');
+const { runAllSeeds } = require('./seedData');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -809,7 +810,7 @@ app.post('/api/civiciq/report', async (req, res) => {
 
   try {
     // ── 1. Parallel data collection ───────────────────────────────────────────
-    const [censusData, hmdaData, communityRows, businessCountRow] = await Promise.all([
+    const [censusData, hmdaData, communityRows, businessData, data311, sentimentData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
       pool.query(`
@@ -820,29 +821,23 @@ app.post('/api/civiciq/report', async (req, res) => {
         ORDER BY score DESC NULLS LAST, collected_at DESC
         LIMIT 20
       `, [neighborhood]).catch(() => ({ rows: [] })),
-      pool.query(`
-        SELECT COUNT(*) AS cnt
-        FROM business_profiles
-        WHERE LOWER(neighborhood) = LOWER($1)
-      `, [neighborhood]).catch(() => ({ rows: [{ cnt: 0 }] })),
+      fetchNeighborhoodBusinesses(pool, neighborhood).catch(() => ({ businesses: [], totalCount: 0, source: 'google_places' })),
+      fetch311Data(pool, neighborhood).catch(() => ({ totalRequests: 0, topCategories: [], abandonedProperty: 0, streetIssues: 0, codeViolations: 0 })),
+      fetchNeighborhoodSentiment(neighborhood).catch(() => ({ posts: [], overallSentiment: 'neutral', signalCount: 0 })),
     ]);
 
-    const ejscreenData = null; // EJScreen requires lat/lng; neighborhood-only requests skip it
-
     const holcData = getHolcData(neighborhood);
-
     const communityMentions = communityRows.rows || [];
-    const businessCount = parseInt(businessCountRow.rows[0]?.cnt || 0);
 
     // ── 2. Build AI context ───────────────────────────────────────────────────
     const censusContext = censusData ? [
-      censusData.medianIncome   ? `Median household income: $${Number(censusData.medianIncome).toLocaleString()}` : null,
-      censusData.povertyRate    != null ? `Poverty rate: ${censusData.povertyRate}%` : null,
-      censusData.bachelorsPlus  != null ? `College-educated: ${censusData.bachelorsPlus}%` : null,
-      censusData.totalPop       ? `Total population (ZIP): ${Number(censusData.totalPop).toLocaleString()}` : null,
-      censusData.whitePct       != null ? `White: ${censusData.whitePct}%` : null,
-      censusData.blackPct       != null ? `Black/African American: ${censusData.blackPct}%` : null,
-      censusData.hispanicPct    != null ? `Hispanic/Latino: ${censusData.hispanicPct}%` : null,
+      censusData.medianIncome  ? `Median household income: $${Number(censusData.medianIncome).toLocaleString()}` : null,
+      censusData.povertyRate   != null ? `Poverty rate: ${censusData.povertyRate}%` : null,
+      censusData.bachelorsPlus != null ? `College-educated: ${censusData.bachelorsPlus}%` : null,
+      censusData.totalPop      ? `Total population (ZIP): ${Number(censusData.totalPop).toLocaleString()}` : null,
+      censusData.whitePct      != null ? `White: ${censusData.whitePct}%` : null,
+      censusData.blackPct      != null ? `Black/African American: ${censusData.blackPct}%` : null,
+      censusData.hispanicPct   != null ? `Hispanic/Latino: ${censusData.hispanicPct}%` : null,
     ].filter(Boolean).join(' | ') : 'Census data not available (no ZIP provided).';
 
     const hmdaContext = hmdaData
@@ -859,6 +854,32 @@ app.post('/api/civiciq/report', async (req, res) => {
         ).join('\n')
       : 'No recent community mentions in database (last 90 days).';
 
+    // Compact summaries for the business, 311, and sentiment context blocks
+    const topBizTypes = (() => {
+      const types = {};
+      (businessData.businesses || []).forEach(b => { if (b.category) types[b.category] = (types[b.category] || 0) + 1; });
+      return Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t, c]) => ({ type: t, count: c }));
+    })();
+    const businessContext = JSON.stringify({
+      totalBusinesses: businessData.totalCount,
+      topCategories:   topBizTypes,
+      sample:          (businessData.businesses || []).slice(0, 12).map(b => ({ name: b.name, category: b.category, rating: b.rating })),
+    });
+
+    const data311Context = JSON.stringify({
+      totalRequests:    data311.totalRequests,
+      topCategories:    (data311.topCategories || []).slice(0, 8),
+      abandonedProperty: data311.abandonedProperty,
+      streetIssues:     data311.streetIssues,
+      codeViolations:   data311.codeViolations,
+    });
+
+    const sentimentContext = JSON.stringify({
+      overallSentiment: sentimentData.overallSentiment,
+      signalCount:      sentimentData.signalCount,
+      posts:            (sentimentData.posts || []).slice(0, 10).map(p => ({ title: p.title, sentiment: p.sentiment, subreddit: p.subreddit })),
+    });
+
     const prompt = `You are producing a CivicIQ Neighborhood Intelligence Report for "${neighborhood}" (Kansas City metro area). Write a rigorous, data-grounded report using the evidence provided. Do not fabricate data. If a section lacks data, say so plainly.
 
 DATA PROVIDED:
@@ -872,10 +893,17 @@ ${hmdaContext}
 HOLC HISTORICAL REDLINING:
 ${holcContext}
 
-BUSINESSES IN DATABASE FOR THIS NEIGHBORHOOD: ${businessCount}
-
 RECENT COMMUNITY MENTIONS (last 90 days, up to 20):
 ${communityContext}
+
+NEIGHBORHOOD BUSINESS LANDSCAPE:
+${businessContext}
+
+311 SERVICE REQUEST PATTERNS:
+${data311Context}
+
+COMMUNITY SENTIMENT:
+${sentimentContext}
 
 ---
 
@@ -893,19 +921,19 @@ Output ONLY a valid JSON object with exactly these 7 keys. Each value is a strin
 
 SECTION GUIDANCE:
 - executive_summary: Top-level synthesis — what defines this neighborhood economically and socially right now
-- economic_conditions: Income levels, poverty, business density, employment signals from available data
+- economic_conditions: Income levels, poverty, business density from the business landscape data, employment signals from available data
 - historical_capital_access: HOLC redlining history and its documented downstream effects on wealth, homeownership, and lending; cite the HMDA denial rate data
 - community_demographics: Population composition from Census — race/ethnicity, education, age if known
 - environmental_justice: If EJScreen data is available use it; otherwise note the absence and discuss what EJ indicators typically reveal in similar KC neighborhoods
-- market_gap_assessment: Based on business count, income levels, and community mentions — what goods or services appear underserved
-- policy_implications: Concrete recommendations for investors, city agencies, or community organizations operating in this neighborhood`;
+- market_gap_assessment: Based on business landscape data, 311 patterns, income levels, and community mentions — what goods or services appear underserved; reference specific category gaps
+- policy_implications: Concrete recommendations for investors, city agencies, or community organizations; reference specific 311 service request patterns (abandoned property, street conditions, code violations) and business density gaps as evidence for each recommendation`;
 
     const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        max_tokens: 1200,
+        max_tokens: 1400,
         messages: [
           { role: 'system', content: 'You are a rigorous neighborhood intelligence analyst. Output only valid JSON. Never add text before or after the JSON object.' },
           { role: 'user', content: prompt },
@@ -927,7 +955,9 @@ SECTION GUIDANCE:
         census:    censusData,
         hmda:      hmdaData,
         holc:      holcData ? { grade: holcData.grade, year: holcData.year, description: holcData.description } : null,
-        business_count: businessCount,
+        businesses:         businessData,
+        data_311:           data311,
+        sentiment:          sentimentData,
         community_mentions: communityMentions.length,
       },
       sections,
@@ -952,6 +982,7 @@ app.listen(PORT, () => {
   }
   initDbWithRetry().then(() => {
     if (!process.env.DATABASE_URL) return;
+    runAllSeeds(pool).catch(e => console.error('[seed] Seed error:', e));
     const collectors = makeCollectors(pool);
 
     // Daily at 3:00 AM UTC — Reddit + GDELT

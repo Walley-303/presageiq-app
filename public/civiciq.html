@@ -325,6 +325,66 @@
       font-size: 14px;
     }
 
+    /* ── Neighborhood Activity section ── */
+    .activity-body { padding: 0; }
+    .activity-block {
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+    .activity-block:last-child { border-bottom: none; }
+    .activity-block-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .activity-stat { font-size: 13px; color: #b8c5d6; margin-bottom: 8px; }
+    .activity-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .activity-tag {
+      background: rgba(82,197,176,.08);
+      border: 1px solid rgba(82,197,176,.15);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--teal);
+    }
+    .activity-cat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255,255,255,.04);
+      font-size: 13px;
+      color: #b8c5d6;
+    }
+    .activity-cat-row:last-child { border-bottom: none; }
+    .activity-count { font-family: var(--mono); color: var(--muted); font-size: 12px; }
+    .activity-sentiment {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--teal);
+      margin-bottom: 10px;
+    }
+    .activity-post {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255,255,255,.04);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .activity-post:last-child { border-bottom: none; }
+    .activity-post-sub {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: rgba(82,197,176,.7);
+      margin-right: 6px;
+    }
+
     /* ── HOLC badge ── */
     .holc-block {
       background: rgba(200,150,62,.04);
@@ -455,8 +515,11 @@
         <div class="source-item"><div class="source-dot"></div><span>U.S. Census Bureau — American Community Survey (ACS 5-Year Estimates, 2023)</span></div>
         <div class="source-item"><div class="source-dot"></div><span>CFPB — Home Mortgage Disclosure Act (HMDA) Aggregations, KC Metro MSA 28140, 2022</span></div>
         <div class="source-item"><div class="source-dot"></div><span>Mapping Inequality — HOLC Historical Redlining Grades (University of Richmond Digital Scholarship Lab)</span></div>
-        <div class="source-item"><div class="source-dot"></div><span>PresageIQ Community Intelligence Database — Reddit, GDELT, KC media (last 90 days)</span></div>
-        <div class="source-item"><div class="source-dot"></div><span>PresageIQ Business Profiles — KCMO Open Data, Foursquare</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>Google Places API — Neighborhood business landscape via boundary-anchored nearby search</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>KCMO 311 Call Center — Reported service requests by category (last 90 days)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>Reddit — r/kansascity, r/KCFoodScene, r/kansascitylocal (neighborhood sentiment, last 12 months)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>PresageIQ Community Intelligence Database — GDELT, KC media (last 90 days)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>Opportunity Atlas / Opportunity Insights (Harvard) — Census-tract economic mobility metrics</span></div>
       </div>
     </div>
 
@@ -467,6 +530,7 @@
   const SECTIONS = [
     { key: 'executive_summary',        label: 'Executive Summary',             icon: '◈' },
     { key: 'economic_conditions',       label: 'Economic Conditions',           icon: '▲' },
+    { key: 'neighborhood_activity',     label: 'Neighborhood Activity',         icon: '⊕', dataSection: true },
     { key: 'historical_capital_access', label: 'Historical Capital Access',     icon: '◉' },
     { key: 'community_demographics',    label: 'Community Demographics',        icon: '▦' },
     { key: 'environmental_justice',     label: 'Environmental Justice',         icon: '⬡' },
@@ -525,11 +589,14 @@
     if (d.holc?.grade) {
       facts.push({ label: 'HOLC Grade', value: d.holc.grade, sub: `${d.holc.year} redlining map` });
     }
-    if (d.business_count != null) {
-      facts.push({ label: 'Businesses', value: Number(d.business_count).toLocaleString(), sub: 'In PresageIQ database' });
+    if (d.businesses?.totalCount != null) {
+      facts.push({ label: 'Businesses', value: Number(d.businesses.totalCount).toLocaleString(), sub: 'Google Places (nearby)' });
     }
-    if (d.community_mentions != null) {
-      facts.push({ label: 'Community Signals', value: d.community_mentions, sub: 'Mentions (last 90 days)' });
+    if (d.data_311?.topCategories?.length) {
+      facts.push({ label: 'Top 311 Issue', value: d.data_311.topCategories[0].category, sub: `${d.data_311.topCategories[0].count} requests (90 days)` });
+    }
+    if (d.sentiment?.overallSentiment) {
+      facts.push({ label: 'Community Sentiment', value: d.sentiment.overallSentiment, sub: `Reddit · ${d.sentiment.signalCount} posts` });
     }
 
     document.getElementById('data-facts').innerHTML = facts.map(f => `
@@ -542,7 +609,59 @@
 
     // ── Sections ──
     const holcInfo = d.holc;
+
+    function renderActivitySection() {
+      const biz  = d.businesses || {};
+      const s311 = d.data_311   || {};
+      const sent = d.sentiment  || {};
+
+      // Business type tags
+      const topTypes = (() => {
+        const types = {};
+        (biz.businesses || []).forEach(b => { if (b.category) types[b.category] = (types[b.category] || 0) + 1; });
+        return Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      })();
+      const bizHtml = `
+        <div class="activity-block">
+          <div class="activity-block-label">Business Landscape (Google Places)</div>
+          <div class="activity-stat">${biz.totalCount || 0} businesses identified within neighborhood bounds</div>
+          <div class="activity-tags">${topTypes.map(([t, c]) => `<div class="activity-tag">${esc(t)} · ${c}</div>`).join('')}</div>
+        </div>`;
+
+      const cats = (s311.topCategories || []).slice(0, 3);
+      const catsHtml = cats.length
+        ? cats.map(c => `<div class="activity-cat-row"><span>${esc(c.category || 'Unknown')}</span><span class="activity-count">${c.count}</span></div>`).join('')
+        : '<div class="activity-stat" style="color:var(--muted)">No 311 data for this neighborhood in the last 90 days.</div>';
+      const s311Html = `
+        <div class="activity-block">
+          <div class="activity-block-label">311 Service Requests — Top Issues (90 days)</div>
+          ${catsHtml}
+        </div>`;
+
+      const topPosts = (sent.posts || []).slice(0, 3);
+      const postsHtml = topPosts.length
+        ? topPosts.map(p => `<div class="activity-post"><span class="activity-post-sub">[${esc(p.subreddit)}]</span>${esc(p.title)}</div>`).join('')
+        : '<div class="activity-stat" style="color:var(--muted)">No Reddit posts found for this neighborhood.</div>';
+      const sentHtml = `
+        <div class="activity-block">
+          <div class="activity-block-label">Community Sentiment (Reddit)</div>
+          <div class="activity-sentiment">${esc(sent.overallSentiment || 'neutral')} · ${sent.signalCount || 0} posts analyzed</div>
+          ${postsHtml}
+        </div>`;
+
+      return `
+        <div class="section-card">
+          <div class="section-head">
+            <div class="section-icon">⊕</div>
+            <div class="section-title">Neighborhood Activity</div>
+          </div>
+          <div class="section-body activity-body">${bizHtml}${s311Html}${sentHtml}</div>
+        </div>`;
+    }
+
     const sectionsHtml = SECTIONS.map(s => {
+      if (s.dataSection) return renderActivitySection();
+
       const text = report.sections?.[s.key] || 'No data available for this section.';
       const isHistorical = s.key === 'historical_capital_access';
       const holcBlock = (isHistorical && holcInfo?.grade && (holcInfo.grade === 'C' || holcInfo.grade === 'D'))
@@ -559,8 +678,7 @@
           </div>
           ${holcBlock}
           <div class="section-body">${esc(text)}</div>
-        </div>
-      `;
+        </div>`;
     }).join('');
 
     document.getElementById('sections-container').innerHTML = sectionsHtml;

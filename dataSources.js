@@ -132,6 +132,30 @@ const DATA_SOURCES = [
       { name: 'Thrillist Kansas City',              url: 'https://www.thrillist.com/kansas-city',                                                  type: 'National lifestyle media — KC food and nightlife coverage' },
     ],
   },
+  {
+    id: 'kc_neighborhoods',
+    name: 'KCMO Neighborhood Boundary Dataset',
+    url: 'https://data.kcmo.org/resource/q45j-ejyk.json',
+    description: 'Official Kansas City neighborhood boundary polygons published via the KCMO Open Data Portal (Socrata). Each record includes neighborhood name and GeoJSON polygon geometry. PresageIQ uses these boundaries to compute neighborhood centroids, bounding boxes, and search radii for Google Places nearby queries.',
+    update_frequency: 'As-needed (boundary dataset is largely static)',
+    how_used: 'Seeded into the kc_neighborhoods table on startup. Centroid lat/lng and bounding box are used by fetchNeighborhoodBusinesses to build radius-based Google Places searches anchored to the actual neighborhood geometry rather than a hardcoded point.',
+  },
+  {
+    id: 'kc_311',
+    name: 'KCMO 311 Call Center Reported Issues',
+    url: 'https://data.kcmo.org/resource/d4px-6rwg.json',
+    description: 'Service request data from the Kansas City 311 Call Center covering reported issues such as abandoned property, potholes, code violations, graffiti, and illegal dumping. Each record includes request type, description, neighborhood, status, and timestamps.',
+    update_frequency: 'On-demand per neighborhood (fetched at CivicIQ report time)',
+    how_used: 'Fetched and upserted into kc_311_requests when a CivicIQ report is generated for a neighborhood with fewer than 10 records in the last 90 days. Aggregated by category and injected into the AI synthesis prompt for the policy_implications and market_gap_assessment sections.',
+  },
+  {
+    id: 'opportunity_atlas',
+    name: 'Opportunity Atlas — Opportunity Insights (Harvard)',
+    url: 'https://opportunityinsights.org/data/',
+    description: 'Census-tract-level data from Opportunity Insights (Harvard/Census Bureau) measuring economic mobility outcomes for children born in low-income families. Metrics include mean household income rank at age 35 (kfr), incarceration rates (jail), employment rates (emp), and teen birth rates (teenbrth), broken out by race/ethnicity and gender.',
+    update_frequency: 'Static (based on 1978–1983 birth cohort, released 2018)',
+    how_used: 'Seeded into the opportunity_atlas table on startup for Missouri (FIPS 29) and Kansas (FIPS 20) tracts. Provides economic mobility context for neighborhood analysis, complementing Census income data with generational outcome measures.',
+  },
 ];
 
 // ── Kansas City HOLC Neighborhood Grades ──────────────────────────────────────

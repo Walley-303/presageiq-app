@@ -210,6 +210,189 @@ async function fetchKCNeighborhoodPop(neighborhood) {
   }
 }
 
+// ── fetchNeighborhoodBusinesses — Google Places nearby via neighborhood boundary ─
+async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+
+  // Look up centroid and bbox from kc_neighborhoods table
+  let lat, lng, radius;
+  try {
+    const r = await pool.query(
+      `SELECT centroid_lat, centroid_lng, bbox_north, bbox_south, bbox_east, bbox_west
+       FROM kc_neighborhoods WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [neighborhoodName]
+    );
+    if (r.rows.length) {
+      const n = r.rows[0];
+      lat = n.centroid_lat;
+      lng = n.centroid_lng;
+      const heightM = (n.bbox_north - n.bbox_south) * 111000;
+      const widthM  = (n.bbox_east - n.bbox_west) * 111000 * Math.cos(lat * Math.PI / 180);
+      radius = Math.max(300, Math.min(Math.round(Math.max(heightM, widthM) / 2), 2500));
+    }
+  } catch (e) {
+    console.warn(`[businesses] DB lookup failed: ${e.message}`);
+  }
+
+  // Fall back to in-memory KC_NEIGHBORHOODS list at 1-mile radius
+  if (!lat || !lng) {
+    const fb = KC_NEIGHBORHOODS.find(n => n.name.toLowerCase() === neighborhoodName.toLowerCase());
+    if (fb) { lat = fb.lat; lng = fb.lng; }
+    radius = 1609;
+  }
+
+  const empty = { businesses: [], totalCount: 0, source: 'google_places', neighborhood: neighborhoodName };
+  if (!lat || !lng) return empty;
+  if (!apiKey) { console.warn('[businesses] GOOGLE_PLACES_API_KEY not set — skipping'); return empty; }
+
+  const TYPE_GROUPS = [
+    ['restaurant', 'bar', 'cafe', 'bakery', 'fast_food_restaurant', 'meal_takeaway'],
+    ['store', 'clothing_store', 'grocery_store', 'convenience_store', 'pharmacy', 'supermarket'],
+    ['beauty_salon', 'gym', 'laundry', 'bank', 'gas_station', 'hair_care'],
+  ];
+  const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.types,places.rating,places.userRatingCount,places.priceLevel,places.location';
+  const baseBody  = { maxResultCount: 20, locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius } } };
+
+  const results = await Promise.all(TYPE_GROUPS.map(types =>
+    fetch('https://places.googleapis.com/v1/places:searchNearby', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': fieldMask },
+      body: JSON.stringify({ ...baseBody, includedTypes: types }),
+      signal: AbortSignal.timeout(10000),
+    })
+    .then(r => r.ok ? r.json() : { places: [] })
+    .catch(() => ({ places: [] }))
+  ));
+
+  const seen = new Set();
+  const businesses = [];
+  for (const result of results) {
+    for (const place of (result.places || [])) {
+      if (!place.id || seen.has(place.id)) continue;
+      seen.add(place.id);
+      businesses.push({
+        name:        place.displayName?.text || '',
+        address:     place.formattedAddress || '',
+        category:    place.types?.[0] || '',
+        rating:      place.rating ?? null,
+        reviewCount: place.userRatingCount ?? null,
+        priceLevel:  place.priceLevel || null,
+        lat:         place.location?.latitude ?? null,
+        lng:         place.location?.longitude ?? null,
+      });
+      if (businesses.length >= 60) break;
+    }
+    if (businesses.length >= 60) break;
+  }
+
+  return { businesses, totalCount: businesses.length, source: 'google_places', neighborhood: neighborhoodName };
+}
+
+// ── fetch311Data — Check DB then seed on demand, return aggregated stats ──────
+async function fetch311Data(pool, neighborhoodName) {
+  let existingCount = 0;
+  try {
+    const r = await pool.query(
+      `SELECT COUNT(*) FROM kc_311_requests
+       WHERE LOWER(neighborhood) = LOWER($1) AND fetched_at >= NOW() - INTERVAL '90 days'`,
+      [neighborhoodName]
+    );
+    existingCount = parseInt(r.rows[0].count || 0);
+  } catch (e) {
+    console.warn(`[311] DB count failed: ${e.message}`);
+  }
+
+  if (existingCount < 10) {
+    try {
+      const { seed311Requests } = require('./seedData');
+      await seed311Requests(pool, neighborhoodName);
+    } catch (e) {
+      console.warn(`[311] seed failed: ${e.message}`);
+    }
+  }
+
+  let rows = [];
+  try {
+    const r = await pool.query(`
+      SELECT category, COUNT(*) AS cnt
+      FROM kc_311_requests
+      WHERE LOWER(neighborhood) = LOWER($1)
+        AND fetched_at >= NOW() - INTERVAL '90 days'
+      GROUP BY category
+      ORDER BY cnt DESC
+    `, [neighborhoodName]);
+    rows = r.rows;
+  } catch (e) {
+    console.warn(`[311] aggregation failed: ${e.message}`);
+  }
+
+  const totalRequests  = rows.reduce((s, r) => s + parseInt(r.cnt), 0);
+  const topCategories  = rows.slice(0, 10).map(r => ({ category: r.category || 'Unknown', count: parseInt(r.cnt) }));
+  const find = (keywords) => rows.find(r => keywords.some(k => (r.category || '').toLowerCase().includes(k)));
+
+  return {
+    totalRequests,
+    topCategories,
+    abandonedProperty: parseInt(find(['abandon'])?.cnt || 0),
+    streetIssues:      parseInt(find(['pothole', 'street', 'road', 'sidewalk'])?.cnt || 0),
+    codeViolations:    parseInt(find(['code', 'violation'])?.cnt || 0),
+    dataFreshness:     '90 days',
+    neighborhood:      neighborhoodName,
+  };
+}
+
+// ── fetchNeighborhoodSentiment — Reddit neighborhood sentiment signal ──────────
+async function fetchNeighborhoodSentiment(neighborhoodName) {
+  const queries = [
+    `${neighborhoodName} Kansas City`,
+    `${neighborhoodName} KC neighborhood`,
+    `${neighborhoodName} development`,
+    `${neighborhoodName} community`,
+  ];
+  const subreddits = ['kansascity', 'KCFoodScene', 'kansascitylocal'];
+
+  const posts = [];
+  const seen  = new Set();
+
+  outer:
+  for (const query of queries) {
+    for (const sub of subreddits) {
+      try {
+        const url = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=relevance&t=year&limit=10`;
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'PresageIQ-Internal/1.0', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!r.ok) continue;
+        const data = await r.json();
+        for (const { data: p } of (data?.data?.children || [])) {
+          if (!p.id || seen.has(p.id)) continue;
+          seen.add(p.id);
+          const text = `${p.title || ''} ${p.selftext || ''}`;
+          posts.push({
+            title:     (p.title || '').substring(0, 150),
+            body:      (p.selftext || '').substring(0, 300),
+            sentiment: detectSentiment(text),
+            subreddit: sub,
+            date:      p.created_utc ? new Date(p.created_utc * 1000).toISOString().substring(0, 10) : null,
+            score:     p.score || 0,
+            url:       p.permalink ? `https://reddit.com${p.permalink}` : null,
+          });
+          if (posts.length >= 30) break outer;
+        }
+        await new Promise(res => setTimeout(res, 500));
+      } catch (e) { /* skip */ }
+    }
+  }
+
+  const counts = { positive: 0, negative: 0, neutral: 0 };
+  posts.forEach(p => { counts[p.sentiment] = (counts[p.sentiment] || 0) + 1; });
+  const overallSentiment = counts.positive > counts.negative ? 'positive'
+    : counts.negative > counts.positive ? 'negative' : 'neutral';
+
+  return { posts, overallSentiment, signalCount: posts.length, neighborhood: neighborhoodName };
+}
+
 function makeCollectors(pool) {
 
   async function logStart(source, triggeredBy = 'scheduler') {
@@ -590,4 +773,4 @@ function makeCollectors(pool) {
   return { collectReddit, collectGdelt, collectKcOpenData, collectCensus, collectFoursquare };
 }
 
-module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop };
+module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment };
