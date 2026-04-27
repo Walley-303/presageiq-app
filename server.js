@@ -857,10 +857,13 @@ app.post('/api/civiciq/report', async (req, res) => {
     }
 
     // ── 1. Parallel data collection ───────────────────────────────────────────
+    const ejStateFips = zip
+      ? ((parseInt(zip.substring(0, 2)) >= 66 && parseInt(zip.substring(0, 2)) <= 67) ? '20' : '29')
+      : null;
     const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
-      (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng).catch(() => null) : Promise.resolve(null),
+      (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng, zip, ejStateFips).catch(() => null) : Promise.resolve(null),
       pool.query(`
         SELECT source, title, body, url, post_date, score, sentiment
         FROM community_intel

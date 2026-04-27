@@ -61,16 +61,49 @@ function num(v) {
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
-  const res = await fetch('https://data.kcmo.org/resource/q45j-ejyk.json?$limit=300');
-  if (!res.ok) throw new Error(`KCMO neighborhoods API error: ${res.status}`);
-  const features = await res.json();
+  const primaryUrl = 'https://data.kcmo.org/resource/q45j-ejyk.json?$limit=300';
+  console.log(`[seed] fetching neighborhoods from ${primaryUrl}`);
+  let features = [];
+
+  const primaryRes = await fetch(primaryUrl);
+  console.log(`[seed] neighborhoods primary status=${primaryRes.status}`);
+  const primaryBody = await primaryRes.text();
+  console.log(`[seed] neighborhoods primary body[0:200]: ${primaryBody.substring(0, 200)}`);
+
+  if (primaryRes.ok) {
+    try { features = JSON.parse(primaryBody); } catch (e) { console.warn(`[seed] neighborhoods JSON parse failed: ${e.message}`); }
+  }
+
+  if (!Array.isArray(features) || features.length === 0) {
+    const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON';
+    console.log(`[seed] primary returned 0 records, trying GeoJSON: ${geoUrl}`);
+    try {
+      const geoRes = await fetch(geoUrl);
+      console.log(`[seed] neighborhoods GeoJSON status=${geoRes.status}`);
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        features = geoData.features || [];
+        console.log(`[seed] GeoJSON endpoint returned ${features.length} features`);
+      }
+    } catch (e) {
+      console.warn(`[seed] GeoJSON fetch failed: ${e.message}`);
+    }
+  } else {
+    console.log(`[seed] primary endpoint returned ${features.length} records`);
+  }
+
+  if (!Array.isArray(features) || features.length === 0) {
+    throw new Error('Both neighborhood endpoints returned 0 records');
+  }
 
   let count = 0;
   for (const feature of features) {
-    const name = feature.name || feature.neighborhood_name || feature.nbhd_name || feature.nhood;
+    // Handle both flat SODA JSON and GeoJSON Feature formats
+    const props = feature.properties || feature;
+    const name = props.name || props.neighborhood_name || props.nbhd_name || props.nhood;
     if (!name) continue;
 
-    const geom = feature.the_geom || null;
+    const geom = feature.geometry || feature.the_geom || null;
     let polygon = null;
     let centroidLat = null, centroidLng = null;
     let bboxNorth = null, bboxSouth = null, bboxEast = null, bboxWest = null;
@@ -121,6 +154,29 @@ async function seedNeighborhoods(pool) {
 // ── seed311Requests ───────────────────────────────────────────────────────────
 
 async function seed311Requests(pool, neighborhoodName) {
+  // Discover actual field names before attempting neighborhood filter queries
+  try {
+    const metaRes = await fetch('https://data.kcmo.org/api/views/d4px-6rwg.json', { signal: AbortSignal.timeout(8000) });
+    console.log(`[311-seed] metadata status=${metaRes.status}`);
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      const cols = (meta.columns || []).map(c => c.fieldName || c.name);
+      console.log(`[311-seed] dataset columns: ${cols.join(', ')}`);
+    }
+  } catch (e) {
+    console.warn(`[311-seed] metadata fetch failed: ${e.message}`);
+  }
+  try {
+    const sampleRes = await fetch('https://data.kcmo.org/resource/d4px-6rwg.json?$limit=5', { signal: AbortSignal.timeout(8000) });
+    console.log(`[311-seed] sample status=${sampleRes.status}`);
+    if (sampleRes.ok) {
+      const sample = await sampleRes.json();
+      if (sample.length > 0) console.log(`[311-seed] first record keys: ${Object.keys(sample[0]).join(', ')}`);
+    }
+  } catch (e) {
+    console.warn(`[311-seed] sample fetch failed: ${e.message}`);
+  }
+
   const safeName  = neighborhoodName.replace(/'/g, "''");
   const firstWord = neighborhoodName.split(/\s+/)[0].replace(/'/g, "''");
 
