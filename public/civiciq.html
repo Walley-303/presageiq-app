@@ -384,6 +384,16 @@
       color: rgba(82,197,176,.7);
       margin-right: 6px;
     }
+    .source-breakdown { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    .source-tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      background: rgba(82,197,176,.09);
+      color: rgba(82,197,176,.8);
+      letter-spacing: 0.04em;
+    }
 
     /* ── HOLC badge ── */
     .holc-block {
@@ -596,7 +606,7 @@
       facts.push({ label: 'Top 311 Issue', value: d.data_311.topCategories[0].category, sub: `${d.data_311.topCategories[0].count} requests (90 days)` });
     }
     if (d.sentiment?.overallSentiment) {
-      facts.push({ label: 'Community Sentiment', value: d.sentiment.overallSentiment, sub: `Reddit · ${d.sentiment.signalCount} posts` });
+      facts.push({ label: 'Community Sentiment', value: d.sentiment.overallSentiment, sub: `Multi-Platform · ${d.sentiment.signalCount || d.sentiment.totalCount || 0} signals` });
     }
 
     document.getElementById('data-facts').innerHTML = facts.map(f => `
@@ -640,12 +650,18 @@
 
       const topPosts = (sent.posts || []).slice(0, 3);
       const postsHtml = topPosts.length
-        ? topPosts.map(p => `<div class="activity-post"><span class="activity-post-sub">[${esc(p.subreddit)}]</span>${esc(p.title)}</div>`).join('')
-        : '<div class="activity-stat" style="color:var(--muted)">No Reddit posts found for this neighborhood.</div>';
+        ? topPosts.map(p => `<div class="activity-post"><span class="activity-post-sub">[${esc(p.source || p.subreddit || 'web')}]</span>${esc(p.title)}</div>`).join('')
+        : '<div class="activity-stat" style="color:var(--muted)">No posts found for this neighborhood.</div>';
+      const breakdown = sent.sourceBreakdown || {};
+      const breakdownTags = Object.entries(breakdown)
+        .filter(([, n]) => n > 0)
+        .map(([src, n]) => `<span class="source-tag">${esc(src.replace('_', ' '))} ${n}</span>`)
+        .join('');
       const sentHtml = `
         <div class="activity-block">
-          <div class="activity-block-label">Community Sentiment (Reddit)</div>
-          <div class="activity-sentiment">${esc(sent.overallSentiment || 'neutral')} · ${sent.signalCount || 0} posts analyzed</div>
+          <div class="activity-block-label">Community Sentiment (Multi-Platform)</div>
+          <div class="activity-sentiment">${esc(sent.overallSentiment || 'neutral')} · ${sent.totalCount || sent.signalCount || 0} signals analyzed</div>
+          ${breakdownTags ? `<div class="source-breakdown">${breakdownTags}</div>` : ''}
           ${postsHtml}
         </div>`;
 

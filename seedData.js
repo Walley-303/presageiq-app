@@ -121,17 +121,18 @@ async function seedNeighborhoods(pool) {
 // ── seed311Requests ───────────────────────────────────────────────────────────
 
 async function seed311Requests(pool, neighborhoodName) {
-  // Escape single quotes for SOQL string literals
-  const safeName = neighborhoodName.replace(/'/g, "''");
-  const params = new URLSearchParams({
-    '$where':  `neighborhood='${safeName}'`,
-    '$limit':  '500',
-    '$order':  'created_date DESC',
-  });
-  const url = `https://data.kcmo.org/resource/d4px-6rwg.json?${params}`;
+  const safeName  = neighborhoodName.replace(/'/g, "''");
+  const firstWord = neighborhoodName.split(/\s+/)[0].replace(/'/g, "''");
+  const whereClause = neighborhoodName.includes(' ')
+    ? `neighborhood='${safeName}' OR neighborhood='${firstWord}' OR neighborhood like '%${firstWord}%'`
+    : `neighborhood='${safeName}' OR neighborhood like '%${safeName}%'`;
+  const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=${encodeURIComponent(whereClause)}&$limit=500&$order=created_date%20DESC`;
+  console.log(`[311-seed] SOQL: ${whereClause}`);
   const res = await fetch(url);
+  console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
   if (!res.ok) throw new Error(`KCMO 311 API error: ${res.status}`);
   const rows = await res.json();
+  console.log(`[311-seed] ${rows.length} records returned for ${neighborhoodName}`);
 
   let count = 0;
   for (const r of rows) {

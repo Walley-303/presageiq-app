@@ -78,29 +78,44 @@ async function fetchCensusData(zip) {
   if (!zip) return null;
   try {
     const vars = 'B19013_001E,B01003_001E,B25003_002E,B17001_002E,B15003_022E,B02001_002E,B02001_003E,B03001_003E';
-    // Determine state code: MO = 29, KS = 20
     const firstTwo = parseInt(zip.substring(0, 2));
-    const stateCode = (firstTwo >= 66 && firstTwo <= 67) ? '20' : '29';
-    const url = `https://api.census.gov/data/2023/acs/acs5?get=NAME,${vars}&for=zip+code+tabulation+area:${zip}&in=state:${stateCode}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) { console.warn(`[census] ZIP ${zip} returned ${res.status}`); return null; }
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length < 2) return null;
+    const primaryState = (firstTwo >= 66 && firstTwo <= 67) ? '20' : '29';
+
+    const tryFetch = async (stateCode) => {
+      const url = `https://api.census.gov/data/2023/acs/acs5?get=${vars}&for=zip+code+tabulation+area:${zip}&in=state:${stateCode}`;
+      console.log(`[census] GET ${url}`);
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      console.log(`[census] status=${res.status} zip=${zip} state=${stateCode}`);
+      if (!res.ok) return null;
+      const body = await res.text();
+      console.log(`[census] body[0:500]: ${body.substring(0, 500)}`);
+      const parsed = JSON.parse(body);
+      return (Array.isArray(parsed) && parsed.length >= 2) ? parsed : null;
+    };
+
+    let data = await tryFetch(primaryState);
+    if (!data) {
+      const altState = primaryState === '29' ? '20' : '29';
+      console.log(`[census] No rows for state=${primaryState}, retrying with state=${altState}`);
+      data = await tryFetch(altState);
+    }
+    if (!data) return null;
+
     const headers = data[0];
-    const values = data[1];
+    const values  = data[1];
     const row = Object.fromEntries(headers.map((h, i) => [h, values[i]]));
-    const totalPop = parseInt(row['B01003_001E']) || 1;
+    const totalPop    = parseInt(row['B01003_001E']) || 1;
     const belowPoverty = parseInt(row['B17001_002E']) || 0;
     return {
       zip,
-      medianIncome: parseInt(row['B19013_001E']) || null,
+      medianIncome:  parseInt(row['B19013_001E']) || null,
       totalPop,
       ownerOccupied: parseInt(row['B25003_002E']) || 0,
       belowPoverty,
-      povertyRate: Math.round(belowPoverty / totalPop * 1000) / 10,
-      whitePct: Math.round(parseInt(row['B02001_002E'] || 0) / totalPop * 1000) / 10,
-      blackPct: Math.round(parseInt(row['B02001_003E'] || 0) / totalPop * 1000) / 10,
-      hispanicPct: Math.round(parseInt(row['B03001_003E'] || 0) / totalPop * 1000) / 10,
+      povertyRate:   Math.round(belowPoverty / totalPop * 1000) / 10,
+      whitePct:      Math.round(parseInt(row['B02001_002E'] || 0) / totalPop * 1000) / 10,
+      blackPct:      Math.round(parseInt(row['B02001_003E'] || 0) / totalPop * 1000) / 10,
+      hispanicPct:   Math.round(parseInt(row['B03001_003E'] || 0) / totalPop * 1000) / 10,
       bachelorsPlus: Math.round(parseInt(row['B15003_022E'] || 0) / totalPop * 1000) / 10,
       dataYear: 2023,
     };
@@ -157,24 +172,46 @@ async function fetchEJScreen(lat, lng) {
       areaid: '',
       f: 'json',
     });
-    const url = `https://ejscreen.epa.gov/mapper/ejscreenRESTbroker.aspx?${params}`;
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) { console.warn(`[ejscreen] returned ${res.status}`); return null; }
-    const data = await res.json();
+
+    const tryEndpoint = async (endpoint) => {
+      const url = `https://ejscreen.epa.gov/mapper/${endpoint}?${params}`;
+      console.log(`[ejscreen] GET ${url}`);
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      console.log(`[ejscreen] status=${res.status} endpoint=${endpoint}`);
+      if (!res.ok) return null;
+      const body = await res.text();
+      console.log(`[ejscreen] body[0:500]: ${body.substring(0, 500)}`);
+      try { return JSON.parse(body); } catch (e) { console.warn(`[ejscreen] JSON parse failed: ${e.message}`); return null; }
+    };
+
+    let data = await tryEndpoint('ejscreenRESTbroker.aspx');
+    if (!data) {
+      console.log('[ejscreen] Primary endpoint failed, trying fallback ejscreenRESTbroker2.aspx');
+      data = await tryEndpoint('ejscreenRESTbroker2.aspx');
+    }
+    if (!data) return null;
+
     const o = data?.outputs || data?.data || data;
-    if (!o || typeof o !== 'object') return null;
+    if (!o || typeof o !== 'object') { console.warn('[ejscreen] No usable output object in response'); return null; }
+    console.log(`[ejscreen] fields present: ${Object.keys(o).slice(0, 20).join(', ')}`);
+
+    const g = (k) => o[k] != null ? o[k] : (o[k.toLowerCase()] != null ? o[k.toLowerCase()] : null);
+    const pct   = (k, alt)  => { const v = g(k) ?? (alt ? g(alt) : null); return v != null ? Math.round(v * 1000) / 10 : null; };
+    const r10   = (k, alt)  => { const v = g(k) ?? (alt ? g(alt) : null); return v != null ? Math.round(v * 10) / 10 : null; };
+    const r100  = (k, alt)  => { const v = g(k) ?? (alt ? g(alt) : null); return v != null ? Math.round(v * 100) / 100 : null; };
+
     return {
-      minorityPct: o.MINORPCT != null ? Math.round(o.MINORPCT * 1000) / 10 : null,
-      lowIncomePct: o.LOWINCPCT != null ? Math.round(o.LOWINCPCT * 1000) / 10 : null,
-      linguisticIsolationPct: o.LINGISOPCT != null ? Math.round(o.LINGISOPCT * 1000) / 10 : null,
-      ejIndexNationalPct: o.EJINDEXN != null ? Math.round(o.EJINDEXN * 10) / 10 : null,
-      cancerRiskPct: o.CANCER != null ? Math.round(o.CANCER * 10) / 10 : null,
-      dieselPM: o.DSLPM != null ? Math.round(o.DSLPM * 100) / 100 : null,
-      trafficProximity: o.PTRAF != null ? Math.round(o.PTRAF * 10) / 10 : null,
-      leadPaintPct: o.PLDPNT != null ? Math.round(o.PLDPNT * 1000) / 10 : null,
+      minorityPct:            pct('MINORPCT'),
+      lowIncomePct:           pct('LOWINCPCT'),
+      linguisticIsolationPct: pct('LINGISOPCT'),
+      ejIndexNationalPct:     r10('EJINDEXN',  'P_EJI'),
+      cancerRiskPct:          r10('CANCER',    'P_CANCER'),
+      dieselPM:               r100('DSLPM',    'P_DSLPM'),
+      trafficProximity:       r10('PTRAF',     'P_PTRAF'),
+      leadPaintPct:           pct('PLDPNT',    'P_LDPNT'),
       dataSource: 'EPA EJScreen',
     };
   } catch (e) {
@@ -399,19 +436,15 @@ async function fetch311Data(pool, neighborhoodName) {
   };
 }
 
-// ── fetchNeighborhoodSentiment — Reddit neighborhood sentiment signal ──────────
-async function fetchNeighborhoodSentiment(neighborhoodName) {
-  const queries = [
-    `${neighborhoodName} Kansas City`,
-    `${neighborhoodName} KC neighborhood`,
-    `${neighborhoodName} development`,
-    `${neighborhoodName} community`,
-  ];
-  const subreddits = ['kansascity', 'KCFoodScene', 'kansascitylocal'];
+// ── Neighborhood Sentiment — Multi-source community signal aggregator ──────────
 
+const QUERY_OVERRIDES = {
+  'Troost Corridor': ['Troost', 'Troost Avenue Kansas City', 'Troost corridor development', 'east of Troost'],
+};
+
+async function collectRedditPosts(queries, subreddits) {
   const posts = [];
   const seen  = new Set();
-
   outer:
   for (const query of queries) {
     for (const sub of subreddits) {
@@ -432,6 +465,7 @@ async function fetchNeighborhoodSentiment(neighborhoodName) {
             body:      (p.selftext || '').substring(0, 300),
             sentiment: detectSentiment(text),
             subreddit: sub,
+            source:    'reddit',
             date:      p.created_utc ? new Date(p.created_utc * 1000).toISOString().substring(0, 10) : null,
             score:     p.score || 0,
             url:       p.permalink ? `https://reddit.com${p.permalink}` : null,
@@ -442,13 +476,127 @@ async function fetchNeighborhoodSentiment(neighborhoodName) {
       } catch (e) { /* skip */ }
     }
   }
+  return posts;
+}
+
+async function searchCSE(query, tag) {
+  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const cx     = process.env.GOOGLE_SEARCH_CX;
+  if (!apiKey || !cx) return [];
+  try {
+    const params = new URLSearchParams({ key: apiKey, cx, q: query, num: '5' });
+    const url = `https://www.googleapis.com/customsearch/v1?${params}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) { console.warn(`[cse:${tag}] status=${r.status}`); return []; }
+    const data = await r.json();
+    return (data.items || []).map(item => ({
+      title:     (item.title || '').substring(0, 150),
+      body:      (item.snippet || '').substring(0, 300),
+      url:       item.link || null,
+      source:    tag,
+      sentiment: null,
+    }));
+  } catch (e) {
+    console.warn(`[cse:${tag}] failed: ${e.message}`);
+    return [];
+  }
+}
+
+async function batchSentiment(items) {
+  const withBaseline = items.map(item => ({
+    ...item,
+    sentiment: detectSentiment(`${item.title} ${item.body}`),
+  }));
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey || withBaseline.length === 0) return withBaseline;
+
+  try {
+    const numbered = withBaseline.map((item, i) => `[${i}] ${item.title}: ${item.body}`).join('\n');
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 400,
+        messages: [{
+          role: 'user',
+          content: `Classify each item's sentiment toward the Kansas City neighborhood as positive, negative, or neutral. Reply with only a JSON array of strings, one per item, in order. Items:\n${numbered}`,
+        }],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) return withBaseline;
+    const data = await r.json();
+    const raw = data.choices?.[0]?.message?.content?.trim() || '[]';
+    const labels = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    if (!Array.isArray(labels)) return withBaseline;
+    return withBaseline.map((item, i) => ({
+      ...item,
+      sentiment: ['positive', 'negative', 'neutral'].includes(labels[i]) ? labels[i] : item.sentiment,
+    }));
+  } catch (e) {
+    console.warn(`[batchSentiment] failed: ${e.message}`);
+    return withBaseline;
+  }
+}
+
+async function fetchNeighborhoodSentiment(neighborhoodName) {
+  const firstWord = neighborhoodName.split(/\s+/)[0];
+  const baseQueries = QUERY_OVERRIDES[neighborhoodName] || [
+    `${neighborhoodName} Kansas City`,
+    `${neighborhoodName} KC neighborhood`,
+    `${neighborhoodName} development`,
+    `${neighborhoodName} community`,
+    ...(neighborhoodName.length > 10 ? [`${firstWord} Kansas City neighborhood`] : []),
+  ];
+
+  const subreddits = ['kansascity', 'KCFoodScene', 'kansascitylocal'];
+
+  const [
+    redditPosts,
+    nextdoorItems,
+    twitterItems,
+    facebookItems,
+    newsItems,
+    yelpItems,
+    citizenItems,
+  ] = await Promise.all([
+    collectRedditPosts(baseQueries, subreddits).catch(() => []),
+    searchCSE(`site:nextdoor.com "${neighborhoodName}" "Kansas City"`, 'nextdoor').catch(() => []),
+    searchCSE(`site:twitter.com OR site:x.com "${neighborhoodName}" "Kansas City"`, 'twitter').catch(() => []),
+    searchCSE(`site:facebook.com/groups "${neighborhoodName}" "Kansas City"`, 'facebook').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City neighborhood site:flatlandkc.org OR site:thepitchkc.com OR site:kcur.org OR site:startlandnews.com`, 'local_news').catch(() => []),
+    searchCSE(`site:yelp.com "${neighborhoodName}" "Kansas City"`, 'yelp').catch(() => []),
+    searchCSE(`site:citizen.com "${neighborhoodName}" "Kansas City"`, 'citizen').catch(() => []),
+  ]);
+
+  const cseItems = [...nextdoorItems, ...twitterItems, ...facebookItems, ...newsItems, ...yelpItems, ...citizenItems];
+  const scoredCSE = await batchSentiment(cseItems);
+
+  const allPosts = [...redditPosts, ...scoredCSE];
 
   const counts = { positive: 0, negative: 0, neutral: 0 };
-  posts.forEach(p => { counts[p.sentiment] = (counts[p.sentiment] || 0) + 1; });
+  allPosts.forEach(p => { counts[p.sentiment] = (counts[p.sentiment] || 0) + 1; });
   const overallSentiment = counts.positive > counts.negative ? 'positive'
     : counts.negative > counts.positive ? 'negative' : 'neutral';
 
-  return { posts, overallSentiment, signalCount: posts.length, neighborhood: neighborhoodName };
+  return {
+    posts: allPosts,
+    totalCount: allPosts.length,
+    overallSentiment,
+    signalCount: allPosts.length,
+    sourceBreakdown: {
+      reddit:     redditPosts.length,
+      nextdoor:   nextdoorItems.length,
+      twitter:    twitterItems.length,
+      facebook:   facebookItems.length,
+      local_news: newsItems.length,
+      yelp:       yelpItems.length,
+      citizen:    citizenItems.length,
+    },
+    neighborhood: neighborhoodName,
+  };
 }
 
 function makeCollectors(pool) {
