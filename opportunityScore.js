@@ -30,6 +30,26 @@ async function scoreDimensions(intel, businessName) {
   const competitors       = parse('competitors') || [];
   const communityMentions = parse('community_mentions') || [];
   const websiteData       = parse('website_data') || {};
+  const demographicIntel  = parse('demographic_intel') || {};
+
+  const census   = (demographicIntel.census   && typeof demographicIntel.census   === 'object') ? demographicIntel.census   : {};
+  const hmda     = (demographicIntel.hmda     && typeof demographicIntel.hmda     === 'object') ? demographicIntel.hmda     : {};
+  const ejscreen = (demographicIntel.ejscreen && typeof demographicIntel.ejscreen === 'object') ? demographicIntel.ejscreen : {};
+  const kcPop    = (demographicIntel.kcPop    && typeof demographicIntel.kcPop    === 'object') ? demographicIntel.kcPop    : {};
+
+  const demographicParts = [];
+  if (census.medianIncome)       demographicParts.push(`Median household income: $${Number(census.medianIncome).toLocaleString()}`);
+  if (census.povertyRate != null) demographicParts.push(`Poverty rate: ${census.povertyRate}%`);
+  if (census.bachelorsPlus != null) demographicParts.push(`College-educated: ${census.bachelorsPlus}%`);
+  if (ejscreen.minorityPct != null) demographicParts.push(`Minority population: ${ejscreen.minorityPct}%`);
+  if (ejscreen.ejIndexNationalPct != null) demographicParts.push(`EJ Index national pct: ${ejscreen.ejIndexNationalPct}`);
+  if (kcPop.population)          demographicParts.push(`Neighborhood population: ${Number(kcPop.population).toLocaleString()}`);
+  const demographicContext = demographicParts.length ? demographicParts.join(' | ') : 'No demographic data available.';
+
+  const hmdaApplicable = (hmda.totalOriginated || 0) + (hmda.totalDenied || 0);
+  const hmdaNote = hmda.overallDenialRate != null
+    ? `HMDA Lending (KC Metro 2022): ${hmda.overallDenialRate}% overall mortgage denial rate (${(hmda.totalDenied || 0).toLocaleString()} denied of ${hmdaApplicable.toLocaleString()} originated+denied applications). ${hmda.note || ''}`
+    : 'HMDA lending data: not available.';
 
   const rating      = placeData.rating || null;
   const reviewCount = placeData.userRatingCount || 0;
@@ -70,10 +90,10 @@ Scoring guidelines (apply consistently across all dimensions):
 DIMENSION DEFINITIONS:
 - customer_sentiment: Overall sentiment from Google reviews and ratings; customer satisfaction patterns
 - competitive_position: Standing vs. nearby competitors by rating, price tier, and differentiation
-- demand_alignment: Evidence that menu items, photos, and offerings match what customers want and photograph
+- demand_alignment: Evidence that menu items, photos, and offerings match what customers want and photograph; incorporate neighborhood demographic context (income, poverty rate) when assessing price-point fit
 - operational_consistency: Patterns in reviews regarding reliability, wait times, service quality, management
 - digital_presence: Website quality, menu accessibility online, social media visibility, photo count on Google Maps
-- community_signal: Coverage in local press, Reddit, community databases, and KC media sources
+- community_signal: Coverage in local press, Reddit, community databases, and KC media sources; HMDA mortgage lending data indicating structural capital access patterns in the neighborhood
 
 DATA PROVIDED:
 Google Rating: ${rating ? `${rating}★ (${reviewCount} reviews)` : 'Not found on Google Maps'}
@@ -101,6 +121,12 @@ ${menuItems.substring(0, 600) || 'Not available.'}
 
 COMMUNITY MENTIONS:
 ${communityText.substring(0, 600)}
+
+NEIGHBORHOOD DEMOGRAPHIC CONTEXT:
+${demographicContext}
+
+MORTGAGE LENDING CONTEXT:
+${hmdaNote}
 
 Output ONLY a valid JSON object. No text before or after:
 {

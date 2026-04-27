@@ -12,6 +12,22 @@ const DATA_SOURCES = [
     how_used: 'Populates the neighborhood_profiles table. Used to assess demand alignment, purchasing power, and demographic fit for a business concept in a target neighborhood.',
   },
   {
+    id: 'hmda',
+    name: 'Home Mortgage Disclosure Act Data (CFPB)',
+    url: 'https://ffiec.cfpb.gov/data-browser/',
+    description: 'Federal mortgage lending disclosure data aggregated by the Consumer Financial Protection Bureau. Covers loan originations, denials, and withdrawals by MSA, year, action taken, and borrower demographics. PresageIQ queries the KC metro MSA (28140) for originated vs. denied mortgage application counts to compute an overall denial rate.',
+    update_frequency: 'Annual (prior year data released mid-year)',
+    how_used: 'Injects lending pattern context into the opportunity scoring prompt for the community_signal dimension. A high mortgage denial rate in the KC metro signals structural capital access constraints that can affect commercial lending patterns in the same neighborhoods.',
+  },
+  {
+    id: 'ejscreen',
+    name: 'EPA EJScreen Environmental Justice Mapping Tool',
+    url: 'https://ejscreen.epa.gov/mapper/',
+    description: 'EPA environmental justice screening tool providing census-tract-level indicators for minority population percentage, low-income percentage, linguistic isolation, and environmental burden indices (cancer risk, diesel particulate matter, traffic proximity, lead paint, superfund proximity). The EJ Index national percentile combines environmental and demographic factors into a single composite score.',
+    update_frequency: 'Annual',
+    how_used: 'Fetched at the business\'s lat/lng coordinates using a 0.5-mile radius query. Minority percentage, low-income percentage, and the EJ Index national percentile are injected into the opportunity scoring prompt for the demand_alignment dimension, contextualizing price-point fit and consumer purchasing power relative to the surrounding community.',
+  },
+  {
     id: 'mapping_inequality',
     name: 'Mapping Inequality — HOLC Redlining Maps',
     url: 'https://dsl.richmond.edu/panorama/redlining',

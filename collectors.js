@@ -73,6 +73,143 @@ function detectSentiment(text) {
   return score > 0 ? 'positive' : score < 0 ? 'negative' : 'neutral';
 }
 
+// ── fetchCensusData — ACS 5-year estimates by ZIP (no API key required) ────────
+async function fetchCensusData(zip) {
+  if (!zip) return null;
+  try {
+    const vars = 'B19013_001E,B01003_001E,B25003_002E,B17001_002E,B15003_022E,B02001_002E,B02001_003E,B03001_003E';
+    // Determine state code: MO = 29, KS = 20
+    const firstTwo = parseInt(zip.substring(0, 2));
+    const stateCode = (firstTwo >= 66 && firstTwo <= 67) ? '20' : '29';
+    const url = `https://api.census.gov/data/2023/acs/acs5?get=NAME,${vars}&for=zip+code+tabulation+area:${zip}&in=state:${stateCode}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) { console.warn(`[census] ZIP ${zip} returned ${res.status}`); return null; }
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length < 2) return null;
+    const headers = data[0];
+    const values = data[1];
+    const row = Object.fromEntries(headers.map((h, i) => [h, values[i]]));
+    const totalPop = parseInt(row['B01003_001E']) || 1;
+    const belowPoverty = parseInt(row['B17001_002E']) || 0;
+    return {
+      zip,
+      medianIncome: parseInt(row['B19013_001E']) || null,
+      totalPop,
+      ownerOccupied: parseInt(row['B25003_002E']) || 0,
+      belowPoverty,
+      povertyRate: Math.round(belowPoverty / totalPop * 1000) / 10,
+      whitePct: Math.round(parseInt(row['B02001_002E'] || 0) / totalPop * 1000) / 10,
+      blackPct: Math.round(parseInt(row['B02001_003E'] || 0) / totalPop * 1000) / 10,
+      hispanicPct: Math.round(parseInt(row['B03001_003E'] || 0) / totalPop * 1000) / 10,
+      bachelorsPlus: Math.round(parseInt(row['B15003_022E'] || 0) / totalPop * 1000) / 10,
+      dataYear: 2023,
+    };
+  } catch (e) {
+    console.warn(`[census] failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ── fetchHmdaData — CFPB HMDA mortgage lending patterns for KC metro ──────────
+async function fetchHmdaData() {
+  try {
+    const url = 'https://ffiec.cfpb.gov/api/public/hmda/data/nationwide/aggregations?years=2022&msamd=28140&variable=action_taken';
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) { console.warn(`[hmda] returned ${res.status}`); return null; }
+    const data = await res.json();
+    const aggs = data?.aggregations || data?.data || [];
+    let originated = 0, denied = 0, total = 0;
+    for (const item of aggs) {
+      const actionTaken = parseInt(item.action_taken || item.action_taken_type || 0);
+      const count = parseInt(item.count || 0);
+      total += count;
+      if (actionTaken === 1) originated += count;
+      if (actionTaken === 3) denied += count;
+    }
+    const applicableTotal = originated + denied;
+    return {
+      msaCode: '28140',
+      year: 2022,
+      totalApplications: total,
+      totalOriginated: originated,
+      totalDenied: denied,
+      overallDenialRate: applicableTotal > 0 ? Math.round(denied / applicableTotal * 1000) / 10 : null,
+      note: 'HMDA data reflects KC metro mortgage lending patterns',
+    };
+  } catch (e) {
+    console.warn(`[hmda] failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ── fetchEJScreen — EPA environmental justice indicators for a location ────────
+async function fetchEJScreen(lat, lng) {
+  if (lat == null || lng == null) return null;
+  try {
+    const params = new URLSearchParams({
+      namestr: `${lat},${lng}`,
+      unit: 'miles',
+      distance: '0.5',
+      areatype: 'circle',
+      areaid: '',
+      f: 'json',
+    });
+    const url = `https://ejscreen.epa.gov/mapper/ejscreenRESTbroker.aspx?${params}`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) { console.warn(`[ejscreen] returned ${res.status}`); return null; }
+    const data = await res.json();
+    const o = data?.outputs || data?.data || data;
+    if (!o || typeof o !== 'object') return null;
+    return {
+      minorityPct: o.MINORPCT != null ? Math.round(o.MINORPCT * 1000) / 10 : null,
+      lowIncomePct: o.LOWINCPCT != null ? Math.round(o.LOWINCPCT * 1000) / 10 : null,
+      linguisticIsolationPct: o.LINGISOPCT != null ? Math.round(o.LINGISOPCT * 1000) / 10 : null,
+      ejIndexNationalPct: o.EJINDEXN != null ? Math.round(o.EJINDEXN * 10) / 10 : null,
+      cancerRiskPct: o.CANCER != null ? Math.round(o.CANCER * 10) / 10 : null,
+      dieselPM: o.DSLPM != null ? Math.round(o.DSLPM * 100) / 100 : null,
+      trafficProximity: o.PTRAF != null ? Math.round(o.PTRAF * 10) / 10 : null,
+      leadPaintPct: o.PLDPNT != null ? Math.round(o.PLDPNT * 1000) / 10 : null,
+      dataSource: 'EPA EJScreen',
+    };
+  } catch (e) {
+    console.warn(`[ejscreen] failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ── fetchKCNeighborhoodPop — KCMO Open Data neighborhood population ────────────
+async function fetchKCNeighborhoodPop(neighborhood) {
+  if (!neighborhood) return null;
+  try {
+    const nbhd = neighborhood.replace(/'/g, "''");
+    const url = `https://data.kcmo.org/resource/7nq4-imiw.json?$where=${encodeURIComponent(`neighborhood_name like '%${nbhd}%'`)}`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) { console.warn(`[kcpop] returned ${res.status}`); return null; }
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    const row = data[0];
+    return {
+      neighborhood: row.neighborhood_name || neighborhood,
+      population: parseInt(row.population || row.pop || 0) || null,
+      households: parseInt(row.households || row.hh || 0) || null,
+      medianAge: parseFloat(row.median_age || 0) || null,
+      dataSource: 'KCMO Open Data',
+    };
+  } catch (e) {
+    console.warn(`[kcpop] failed: ${e.message}`);
+    return null;
+  }
+}
+
 function makeCollectors(pool) {
 
   async function logStart(source, triggeredBy = 'scheduler') {
@@ -453,4 +590,4 @@ function makeCollectors(pool) {
   return { collectReddit, collectGdelt, collectKcOpenData, collectCensus, collectFoursquare };
 }
 
-module.exports = { makeCollectors, KC_NEIGHBORHOODS };
+module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop };

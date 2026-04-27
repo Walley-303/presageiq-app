@@ -2,6 +2,8 @@
 // Triggered on audit submission. Gathers Google Places data, competitor
 // analysis, website content, and community mentions. Synthesizes with AI.
 
+const { fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop } = require('./collectors');
+
 const PLACES_BASE = 'https://places.googleapis.com/v1';
 const PRICE_LABELS = {
   PRICE_LEVEL_FREE: 'Free',
@@ -564,7 +566,11 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
     }
 
     await setMsg('Scraping reviews from Google and Yelp...');
-    // ── 4. Community mentions + web search + social intel + reviews (parallel) ──
+    // Extract ZIP from formatted address for Census ACS lookup
+    const zipMatch = (place.formattedAddress || '').match(/\b(\d{5})\b/);
+    const placeZip = zipMatch ? zipMatch[1] : null;
+
+    // ── 4. Community mentions + web search + social intel + reviews + demographics (parallel) ──
     let communityMentions = [];
     let webSearchResults = [];
     let instagramData = null;
@@ -572,8 +578,12 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
     let youtubeData = null;
     let googleReviewData = null;
     let yelpReviewData = null;
+    let censusData = null;
+    let hmdaData = null;
+    let ejscreenData = null;
+    let kcPopData = null;
     try {
-      [communityMentions, webSearchResults, instagramData, tiktokData, youtubeData, googleReviewData, yelpReviewData] = await Promise.all([
+      [communityMentions, webSearchResults, instagramData, tiktokData, youtubeData, googleReviewData, yelpReviewData, censusData, hmdaData, ejscreenData, kcPopData] = await Promise.all([
         getCommunityMentions(pool, businessName).catch(() => []),
         searchAndScrapeWeb(businessName, neighborhood).catch(() => []),
         scrapeInstagram(businessName).catch(() => ({ handle: null, bio: null, recentPosts: [], overallSentiment: 'unknown', hashtags: [], engagementRate: null, postingConsistency: 'unknown', followerQuality: 'unknown' })),
@@ -581,6 +591,10 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
         searchYouTube(businessName, neighborhood).catch(() => ({ videos: [], overallSentiment: 'unknown' })),
         scrapeAllGoogleReviews(place.id, businessName).catch(() => ({ reviews: [], totalCaptured: 0, totalAvailable: 0 })),
         scrapeYelpReviews(businessName, place.formattedAddress).catch(() => ({ reviews: [], yelpRating: null, reviewCount: 0 })),
+        fetchCensusData(placeZip).catch(() => null),
+        fetchHmdaData().catch(() => null),
+        fetchEJScreen(lat, lng).catch(() => null),
+        fetchKCNeighborhoodPop(neighborhood).catch(() => null),
       ]);
       if (webSearchResults.length) console.log(`[intel] Web search: found ${webSearchResults.length} result(s)`);
       if (instagramData?.handle) console.log(`[intel] Instagram: ${instagramData.handle}`);
@@ -632,9 +646,9 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
         place_id=$1, place_data=$2, competitors=$3,
         website_data=$4, community_mentions=$5,
         ai_photo_subjects=$6, ai_menu_items=$7,
-        social_intel=$8,
+        social_intel=$8, demographic_intel=$9,
         status='synthesizing'
-      WHERE client_id=$9
+      WHERE client_id=$10
     `, [
       place.id,
       JSON.stringify(place),
@@ -644,6 +658,7 @@ async function gatherBusinessIntel(pool, clientId, businessName, neighborhood) {
       photoSubjects ? JSON.stringify(photoSubjects) : null,
       menuItems ? JSON.stringify(menuItems) : null,
       JSON.stringify({ instagram: instagramData, tiktok: tiktokData, youtube: youtubeData }),
+      JSON.stringify({ census: censusData, hmda: hmdaData, ejscreen: ejscreenData, kcPop: kcPopData }),
       clientId,
     ]);
 
