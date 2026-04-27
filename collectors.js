@@ -165,10 +165,19 @@ async function fetchEJScreen(lat, lng, zip, stateFips) {
     if (!zip) return null;
     console.log(`[ejscreen] EPA blocked, using Census proxy for zip ${zip}`);
     try {
-      const fallbackUrl = `https://api.census.gov/data/2023/acs/acs5?get=B02001_003E,B17001_002E,B01003_001E&for=zip+code+tabulation+area:${zip}`;
-      const cRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout(10000) });
+      const url = `https://api.census.gov/data/2023/acs/acs5?get=B02001_003E,B17001_002E,B01003_001E&for=zip+code+tabulation+area:${zip}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let cRes;
+      try {
+        cRes = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      console.log(`[ejscreen] Census proxy status=${cRes.status} zip=${zip}`);
       if (!cRes.ok) { console.warn(`[ejscreen] Census proxy status=${cRes.status}`); return null; }
-      const cData = await cRes.json();
+      const body = await cRes.text();
+      const cData = JSON.parse(body);
       if (!Array.isArray(cData) || cData.length < 2) return null;
       const headers = cData[0];
       const values  = cData[1];
@@ -176,9 +185,12 @@ async function fetchEJScreen(lat, lng, zip, stateFips) {
       const totalPop     = parseInt(row['B01003_001E']) || 1;
       const blackPop     = parseInt(row['B02001_003E']) || 0;
       const belowPoverty = parseInt(row['B17001_002E']) || 0;
+      const minorityPct  = Math.round(blackPop / totalPop * 1000) / 10;
+      const lowIncomePct = Math.round(belowPoverty / totalPop * 1000) / 10;
+      console.log(`[ejscreen] Census proxy success: minorityPct=${minorityPct}% lowIncomePct=${lowIncomePct}%`);
       return {
-        minorityPct:            Math.round(blackPop / totalPop * 1000) / 10,
-        lowIncomePct:           Math.round(belowPoverty / totalPop * 1000) / 10,
+        minorityPct,
+        lowIncomePct,
         linguisticIsolationPct: null,
         ejIndexNationalPct:     null,
         cancerRiskPct:          null,
@@ -377,19 +389,28 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
 }
 
 // ── fetch311Data — Fetch 100 most recent records with no neighborhood filter ───
-// Tries alternate dataset 7at3-sxhp first; falls back to d4px-6rwg.
+// 7at3-sxhp is the primary archive (creation_date, category, type).
+// d4px-6rwg is the fallback (open_date_time, issue_type, issue_sub_type).
 async function fetch311Data(pool, neighborhoodName) {
   const ENDPOINTS = [
-    'https://data.kcmo.org/resource/7at3-sxhp.json?$limit=100&$order=created_date+DESC',
-    'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=created_date+DESC',
+    {
+      url:    'https://data.kcmo.org/resource/7at3-sxhp.json?$limit=100&$order=creation_date+DESC',
+      getCat: (r) => r.category || r.request_type || r.type || 'Unknown',
+    },
+    {
+      url:    'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=open_date_time+DESC',
+      getCat: (r) => r.issue_type || r.issue_sub_type || 'Unknown',
+    },
   ];
 
   let rows = [];
-  for (const url of ENDPOINTS) {
+  let getCat = ENDPOINTS[0].getCat;
+
+  for (const endpoint of ENDPOINTS) {
     try {
-      console.log(`[311] trying ${url}`);
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      console.log(`[311] status=${res.status} url=${url}`);
+      console.log(`[311] trying ${endpoint.url}`);
+      const res = await fetch(endpoint.url, { signal: AbortSignal.timeout(10000) });
+      console.log(`[311] status=${res.status} url=${endpoint.url}`);
       if (!res.ok) {
         const errBody = await res.text();
         console.warn(`[311] error body: ${errBody.substring(0, 300)}`);
@@ -398,17 +419,18 @@ async function fetch311Data(pool, neighborhoodName) {
       rows = await res.json();
       if (rows.length > 0) {
         console.log(`[311] first record keys: ${Object.keys(rows[0]).join(', ')}`);
+        getCat = endpoint.getCat;
         break;
       }
-      console.warn(`[311] ${url} returned 0 records, trying next endpoint`);
+      console.warn(`[311] ${endpoint.url} returned 0 records, trying next endpoint`);
     } catch (e) {
-      console.warn(`[311] ${url} failed: ${e.message}`);
+      console.warn(`[311] ${endpoint.url} failed: ${e.message}`);
     }
   }
 
   const counts = {};
   for (const r of rows) {
-    const cat = r.requesttype || r.category || r.request_type || r.type || 'Unknown';
+    const cat = getCat(r);
     counts[cat] = (counts[cat] || 0) + 1;
   }
   const topCategories = Object.entries(counts)

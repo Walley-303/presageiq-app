@@ -216,12 +216,12 @@ async function seed311Requests(pool, neighborhoodName) {
   const safeName  = neighborhoodName.replace(/'/g, "''");
   const firstWord = neighborhoodName.split(/\s+/)[0].replace(/'/g, "''");
 
-  // Try alternate dataset 7at3-sxhp first; d4px-6rwg returning 400
-  const BASES = [
-    'https://data.kcmo.org/resource/7at3-sxhp.json',
-    'https://data.kcmo.org/resource/d4px-6rwg.json',
+  // 7at3-sxhp: creation_date sort, category/type fields
+  // d4px-6rwg: open_date_time sort, issue_type/issue_sub_type fields
+  const DATASETS = [
+    { base: 'https://data.kcmo.org/resource/7at3-sxhp.json', order: 'creation_date' },
+    { base: 'https://data.kcmo.org/resource/d4px-6rwg.json', order: 'open_date_time' },
   ];
-  const TAIL = '&$limit=500&$order=created_date%20DESC';
   const whereClauses = [
     `neighborhood='${safeName}'`,
     `neighborhood='${firstWord}'`,
@@ -230,10 +230,11 @@ async function seed311Requests(pool, neighborhoodName) {
 
   let rows = [];
   outer:
-  for (const BASE of BASES) {
+  for (const dataset of DATASETS) {
+    const tail = `&$limit=500&$order=${dataset.order}%20DESC`;
     for (const where of whereClauses) {
-      const url = `${BASE}?$where=${encodeURIComponent(where)}${TAIL}`;
-      console.log(`[311-seed] trying ${BASE.split('/').pop()} SOQL: ${where}`);
+      const url = `${dataset.base}?$where=${encodeURIComponent(where)}${tail}`;
+      console.log(`[311-seed] trying ${dataset.base.split('/').pop()} SOQL: ${where}`);
       try {
         const res = await fetch(url);
         console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
@@ -253,7 +254,8 @@ async function seed311Requests(pool, neighborhoodName) {
 
   let count = 0;
   for (const r of rows) {
-    const requestId = r.servicerequestnum || r.request_id || null;
+    // Cover field names from both datasets
+    const requestId = r.case_id || r.workorder_ || r.servicerequestnum || r.request_id || null;
     if (!requestId) continue;
 
     await pool.query(`
@@ -264,13 +266,13 @@ async function seed311Requests(pool, neighborhoodName) {
       ON CONFLICT (request_id) DO NOTHING
     `, [
       requestId,
-      r.requesttype  || r.category    || null,
-      r.type         || r.problem     || null,
-      r.description  || r.comments    || r.details || null,
+      r.category     || r.request_type || r.issue_type    || null,
+      r.type         || r.issue_sub_type || r.problem      || null,
+      r.detail       || r.reported_issue || r.description  || r.comments || null,
       r.neighborhood || neighborhoodName,
-      r.status       || null,
-      r.createdate   || r.created_date || null,
-      r.closeddate   || r.closed_date  || null,
+      r.current_status || r.status      || null,
+      r.creation_date  || r.open_date_time || r.createdate || r.created_date || null,
+      r.resolved_date  || r.closeddate  || r.closed_date   || null,
       r.latitude  ? parseFloat(r.latitude)  : null,
       r.longitude ? parseFloat(r.longitude) : null,
     ]);
