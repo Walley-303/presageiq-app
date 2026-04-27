@@ -388,29 +388,36 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
   return { businesses, totalCount: businesses.length, source: 'google_places', neighborhood: neighborhoodName };
 }
 
-// ── fetch311Data — Fetch 100 most recent records with no neighborhood filter ───
-// 7at3-sxhp is the primary archive (creation_date, category, type).
-// d4px-6rwg is the fallback (open_date_time, issue_type, issue_sub_type).
+// ── fetch311Data — Query 7at3-sxhp with neighborhood filter; fall back to no-filter then d4px-6rwg ─
 async function fetch311Data(pool, neighborhoodName) {
+  const nbhdFilter = encodeURIComponent(`neighborhood='${neighborhoodName.replace(/'/g, "''")}'`);
   const ENDPOINTS = [
     {
-      url:    'https://data.kcmo.org/resource/7at3-sxhp.json?$limit=100&$order=creation_date+DESC',
-      getCat: (r) => r.category || r.request_type || r.type || 'Unknown',
+      url:      `https://data.kcmo.org/resource/7at3-sxhp.json?$where=${nbhdFilter}&$limit=100&$order=creation_date+DESC`,
+      getCat:   (r) => r.category || r.request_type || r.type || 'Unknown',
+      filtered: true,
     },
     {
-      url:    'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=open_date_time+DESC',
-      getCat: (r) => r.issue_type || r.issue_sub_type || 'Unknown',
+      url:      'https://data.kcmo.org/resource/7at3-sxhp.json?$limit=100&$order=creation_date+DESC',
+      getCat:   (r) => r.category || r.request_type || r.type || 'Unknown',
+      filtered: false,
+    },
+    {
+      url:      'https://data.kcmo.org/resource/d4px-6rwg.json?$limit=100&$order=open_date_time+DESC',
+      getCat:   (r) => r.issue_type || r.issue_sub_type || 'Unknown',
+      filtered: false,
     },
   ];
 
   let rows = [];
-  let getCat = ENDPOINTS[0].getCat;
+  let getCat    = ENDPOINTS[0].getCat;
+  let isFiltered = false;
 
   for (const endpoint of ENDPOINTS) {
     try {
       console.log(`[311] trying ${endpoint.url}`);
       const res = await fetch(endpoint.url, { signal: AbortSignal.timeout(10000) });
-      console.log(`[311] status=${res.status} url=${endpoint.url}`);
+      console.log(`[311] status=${res.status}`);
       if (!res.ok) {
         const errBody = await res.text();
         console.warn(`[311] error body: ${errBody.substring(0, 300)}`);
@@ -418,8 +425,9 @@ async function fetch311Data(pool, neighborhoodName) {
       }
       rows = await res.json();
       if (rows.length > 0) {
-        console.log(`[311] first record keys: ${Object.keys(rows[0]).join(', ')}`);
-        getCat = endpoint.getCat;
+        console.log(`[311] ${rows.length} records, first record keys: ${Object.keys(rows[0]).join(', ')}`);
+        getCat     = endpoint.getCat;
+        isFiltered = endpoint.filtered;
         break;
       }
       console.warn(`[311] ${endpoint.url} returned 0 records, trying next endpoint`);
@@ -446,7 +454,7 @@ async function fetch311Data(pool, neighborhoodName) {
     abandonedProperty: find(['abandon'])?.count || 0,
     streetIssues:      find(['pothole', 'street', 'road', 'sidewalk'])?.count || 0,
     codeViolations:    find(['code', 'violation'])?.count || 0,
-    dataFreshness:     '100 most recent (no neighborhood filter)',
+    dataFreshness:     isFiltered ? 'neighborhood-filtered' : '100 most recent (no neighborhood filter)',
     neighborhood:      neighborhoodName,
   };
 }

@@ -254,8 +254,8 @@ async function seed311Requests(pool, neighborhoodName) {
 
   let count = 0;
   for (const r of rows) {
-    // Cover field names from both datasets
-    const requestId = r.case_id || r.workorder_ || r.servicerequestnum || r.request_id || null;
+    // Confirmed 7at3-sxhp field names; d4px-6rwg fields kept as fallbacks
+    const requestId = r.case_id || r.workorder_ || null;
     if (!requestId) continue;
 
     await pool.query(`
@@ -266,15 +266,15 @@ async function seed311Requests(pool, neighborhoodName) {
       ON CONFLICT (request_id) DO NOTHING
     `, [
       requestId,
-      r.category     || r.request_type || r.issue_type    || null,
-      r.type         || r.issue_sub_type || r.problem      || null,
-      r.detail       || r.reported_issue || r.description  || r.comments || null,
-      r.neighborhood || neighborhoodName,
-      r.current_status || r.status      || null,
-      r.creation_date  || r.open_date_time || r.createdate || r.created_date || null,
-      r.resolved_date  || r.closeddate  || r.closed_date   || null,
-      r.latitude  ? parseFloat(r.latitude)  : null,
-      r.longitude ? parseFloat(r.longitude) : null,
+      r.category      || r.request_type  || r.issue_type    || null,
+      r.type          || r.issue_sub_type || null,
+      r.detail        || r.reported_issue || r.description   || null,
+      r.neighborhood  || neighborhoodName,
+      r.status        || r.current_status || null,
+      r.creation_date || r.open_date_time || null,
+      r.resolved_date || r.closed_date   || null,
+      r.ycoordinate ? parseFloat(r.ycoordinate) : null,
+      r.xcoordinate ? parseFloat(r.xcoordinate) : null,
     ]);
     count++;
   }
