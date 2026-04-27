@@ -210,12 +210,18 @@ async function fetchKCNeighborhoodPop(neighborhood) {
   }
 }
 
-// ── fetchNeighborhoodBusinesses — Google Places nearby via neighborhood boundary ─
-async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+// ── Hardcoded coordinate fallbacks for neighborhoods that may not be in kc_neighborhoods ──
+const NBHD_COORD_FALLBACKS = {
+  'Troost Corridor': { lat: 39.0447, lng: -94.5688, radius: 1500 },
+  'East Side':       { lat: 39.0900, lng: -94.5300, radius: 2000 },
+  'Westside':        { lat: 39.0986, lng: -94.5900, radius: 1200 },
+  '18th and Vine':   { lat: 39.0850, lng: -94.5650, radius: 800  },
+  'Crossroads':      { lat: 39.0800, lng: -94.5800, radius: 1000 },
+};
 
-  // Look up centroid and bbox from kc_neighborhoods table
-  let lat, lng, radius;
+// Resolve coordinates for a neighborhood: exact DB → fuzzy DB → in-memory → hardcoded fallback
+async function resolveNeighborhoodCoords(pool, neighborhoodName) {
+  // 1. Exact match
   try {
     const r = await pool.query(
       `SELECT centroid_lat, centroid_lng, bbox_north, bbox_south, bbox_east, bbox_west
@@ -224,26 +230,64 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
     );
     if (r.rows.length) {
       const n = r.rows[0];
-      lat = n.centroid_lat;
-      lng = n.centroid_lng;
       const heightM = (n.bbox_north - n.bbox_south) * 111000;
-      const widthM  = (n.bbox_east - n.bbox_west) * 111000 * Math.cos(lat * Math.PI / 180);
-      radius = Math.max(300, Math.min(Math.round(Math.max(heightM, widthM) / 2), 2500));
+      const widthM  = (n.bbox_east - n.bbox_west) * 111000 * Math.cos(n.centroid_lat * Math.PI / 180);
+      return {
+        lat:    n.centroid_lat,
+        lng:    n.centroid_lng,
+        radius: Math.max(300, Math.min(Math.round(Math.max(heightM, widthM) / 2), 2500)),
+      };
     }
   } catch (e) {
-    console.warn(`[businesses] DB lookup failed: ${e.message}`);
+    console.warn(`[nbhd-coords] exact lookup failed: ${e.message}`);
   }
 
-  // Fall back to in-memory KC_NEIGHBORHOODS list at 1-mile radius
-  if (!lat || !lng) {
-    const fb = KC_NEIGHBORHOODS.find(n => n.name.toLowerCase() === neighborhoodName.toLowerCase());
-    if (fb) { lat = fb.lat; lng = fb.lng; }
-    radius = 1609;
+  // 2. Fuzzy match in DB
+  try {
+    const r = await pool.query(
+      `SELECT centroid_lat, centroid_lng, bbox_north, bbox_south, bbox_east, bbox_west
+       FROM kc_neighborhoods
+       WHERE LOWER(name) LIKE LOWER('%' || $1 || '%')
+          OR LOWER($1) LIKE LOWER('%' || name || '%')
+       LIMIT 1`,
+      [neighborhoodName]
+    );
+    if (r.rows.length) {
+      const n = r.rows[0];
+      const heightM = (n.bbox_north - n.bbox_south) * 111000;
+      const widthM  = (n.bbox_east - n.bbox_west) * 111000 * Math.cos(n.centroid_lat * Math.PI / 180);
+      return {
+        lat:    n.centroid_lat,
+        lng:    n.centroid_lng,
+        radius: Math.max(300, Math.min(Math.round(Math.max(heightM, widthM) / 2), 2500)),
+      };
+    }
+  } catch (e) {
+    console.warn(`[nbhd-coords] fuzzy lookup failed: ${e.message}`);
   }
+
+  // 3. In-memory KC_NEIGHBORHOODS list
+  const mem = KC_NEIGHBORHOODS.find(n => n.name.toLowerCase() === neighborhoodName.toLowerCase());
+  if (mem) return { lat: mem.lat, lng: mem.lng, radius: 1609 };
+
+  // 4. Hardcoded fallback map
+  const fb = NBHD_COORD_FALLBACKS[neighborhoodName];
+  if (fb) return fb;
+
+  return null;
+}
+
+// ── fetchNeighborhoodBusinesses — Google Places nearby via neighborhood boundary ─
+async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+
+  const coords = await resolveNeighborhoodCoords(pool, neighborhoodName);
 
   const empty = { businesses: [], totalCount: 0, source: 'google_places', neighborhood: neighborhoodName };
-  if (!lat || !lng) return empty;
+  if (!coords) return empty;
   if (!apiKey) { console.warn('[businesses] GOOGLE_PLACES_API_KEY not set — skipping'); return empty; }
+
+  const { lat, lng, radius } = coords;
 
   const TYPE_GROUPS = [
     ['restaurant', 'bar', 'cafe', 'bakery', 'fast_food_restaurant', 'meal_takeaway'],
@@ -290,12 +334,26 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
 
 // ── fetch311Data — Check DB then seed on demand, return aggregated stats ──────
 async function fetch311Data(pool, neighborhoodName) {
+  // Resolve canonical name via fuzzy DB match (311 Socrata uses the official KCMO neighborhood name)
+  let canonicalName = neighborhoodName;
+  try {
+    const r = await pool.query(
+      `SELECT name FROM kc_neighborhoods
+       WHERE LOWER(name) = LOWER($1)
+          OR LOWER(name) LIKE LOWER('%' || $1 || '%')
+          OR LOWER($1) LIKE LOWER('%' || name || '%')
+       LIMIT 1`,
+      [neighborhoodName]
+    );
+    if (r.rows.length) canonicalName = r.rows[0].name;
+  } catch (e) { /* use raw name */ }
+
   let existingCount = 0;
   try {
     const r = await pool.query(
       `SELECT COUNT(*) FROM kc_311_requests
        WHERE LOWER(neighborhood) = LOWER($1) AND fetched_at >= NOW() - INTERVAL '90 days'`,
-      [neighborhoodName]
+      [canonicalName]
     );
     existingCount = parseInt(r.rows[0].count || 0);
   } catch (e) {
@@ -305,7 +363,7 @@ async function fetch311Data(pool, neighborhoodName) {
   if (existingCount < 10) {
     try {
       const { seed311Requests } = require('./seedData');
-      await seed311Requests(pool, neighborhoodName);
+      await seed311Requests(pool, canonicalName);
     } catch (e) {
       console.warn(`[311] seed failed: ${e.message}`);
     }
@@ -320,7 +378,7 @@ async function fetch311Data(pool, neighborhoodName) {
         AND fetched_at >= NOW() - INTERVAL '90 days'
       GROUP BY category
       ORDER BY cnt DESC
-    `, [neighborhoodName]);
+    `, [canonicalName]);
     rows = r.rows;
   } catch (e) {
     console.warn(`[311] aggregation failed: ${e.message}`);

@@ -800,19 +800,67 @@ app.get('/methodology', (req, res) => res.sendFile(path.join(__dirname, 'public'
 
 app.get('/civiciq', (req, res) => res.sendFile(path.join(__dirname, 'public', 'civiciq.html')));
 
+// ── CivicIQ fallback lookup tables ────────────────────────────────────────────
+const CIVICIQ_ZIP_FALLBACKS = {
+  'Troost Corridor': '64110',
+  'East Side':       '64130',
+  'Westside':        '64108',
+  '18th and Vine':   '64108',
+  'Crossroads':      '64108',
+  'River Market':    '64106',
+  'Brookside':       '64113',
+  'Waldo':           '64114',
+  'Midtown':         '64111',
+  'Downtown KC':     '64105',
+  'North KC':        '64116',
+};
+
+const CIVICIQ_COORD_FALLBACKS = {
+  'Troost Corridor': { lat: 39.0447, lng: -94.5688 },
+  'East Side':       { lat: 39.0900, lng: -94.5300 },
+  'Westside':        { lat: 39.0986, lng: -94.5900 },
+  '18th and Vine':   { lat: 39.0850, lng: -94.5650 },
+  'Crossroads':      { lat: 39.0800, lng: -94.5800 },
+};
+
 // ── CivicIQ neighborhood intelligence report ──────────────────────────────────
 app.post('/api/civiciq/report', async (req, res) => {
-  const { neighborhood, zip } = req.body;
+  const { neighborhood, zip: zipParam, lat: latParam, lng: lngParam } = req.body;
   if (!neighborhood) return res.status(400).json({ error: 'neighborhood is required' });
 
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
 
   try {
+    // ── Resolve ZIP — param → fallback map ────────────────────────────────────
+    const zip = zipParam || CIVICIQ_ZIP_FALLBACKS[neighborhood] || null;
+
+    // ── Resolve coordinates — param → DB fuzzy → hardcoded fallback ──────────
+    let resolvedLat = latParam ? parseFloat(latParam) : null;
+    let resolvedLng = lngParam ? parseFloat(lngParam) : null;
+    if (!resolvedLat || !resolvedLng) {
+      try {
+        const r = await pool.query(
+          `SELECT centroid_lat, centroid_lng FROM kc_neighborhoods
+           WHERE LOWER(name) = LOWER($1)
+              OR LOWER(name) LIKE LOWER('%' || $1 || '%')
+              OR LOWER($1) LIKE LOWER('%' || name || '%')
+           LIMIT 1`,
+          [neighborhood]
+        );
+        if (r.rows.length) { resolvedLat = r.rows[0].centroid_lat; resolvedLng = r.rows[0].centroid_lng; }
+      } catch (e) { /* continue to hardcoded fallback */ }
+    }
+    if (!resolvedLat || !resolvedLng) {
+      const fb = CIVICIQ_COORD_FALLBACKS[neighborhood];
+      if (fb) { resolvedLat = fb.lat; resolvedLng = fb.lng; }
+    }
+
     // ── 1. Parallel data collection ───────────────────────────────────────────
-    const [censusData, hmdaData, communityRows, businessData, data311, sentimentData] = await Promise.all([
+    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
+      (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng).catch(() => null) : Promise.resolve(null),
       pool.query(`
         SELECT source, title, body, url, post_date, score, sentiment
         FROM community_intel
@@ -847,6 +895,15 @@ app.post('/api/civiciq/report', async (req, res) => {
     const holcContext = holcData
       ? `HOLC grade: ${holcData.grade} (${holcData.year}). ${holcData.description || ''}`
       : 'No HOLC historical redlining record for this neighborhood.';
+
+    const ejContext = ejscreenData ? [
+      ejscreenData.minorityPct      != null ? `Minority population: ${ejscreenData.minorityPct}%` : null,
+      ejscreenData.lowIncomePct     != null ? `Low-income population: ${ejscreenData.lowIncomePct}%` : null,
+      ejscreenData.ejIndexNationalPct != null ? `EJ Index national percentile: ${ejscreenData.ejIndexNationalPct}` : null,
+      ejscreenData.cancerRiskPct    != null ? `Cancer risk percentile: ${ejscreenData.cancerRiskPct}` : null,
+      ejscreenData.dieselPM         != null ? `Diesel PM percentile: ${ejscreenData.dieselPM}` : null,
+      ejscreenData.leadPaintPct     != null ? `Lead paint indicator: ${ejscreenData.leadPaintPct}%` : null,
+    ].filter(Boolean).join(' | ') : 'EJScreen data not available for this location.';
 
     const communityContext = communityMentions.length
       ? communityMentions.map(m =>
@@ -893,6 +950,9 @@ ${hmdaContext}
 HOLC HISTORICAL REDLINING:
 ${holcContext}
 
+EPA EJSCREEN ENVIRONMENTAL JUSTICE (0.5-mile radius):
+${ejContext}
+
 RECENT COMMUNITY MENTIONS (last 90 days, up to 20):
 ${communityContext}
 
@@ -924,7 +984,7 @@ SECTION GUIDANCE:
 - economic_conditions: Income levels, poverty, business density from the business landscape data, employment signals from available data
 - historical_capital_access: HOLC redlining history and its documented downstream effects on wealth, homeownership, and lending; cite the HMDA denial rate data
 - community_demographics: Population composition from Census — race/ethnicity, education, age if known
-- environmental_justice: If EJScreen data is available use it; otherwise note the absence and discuss what EJ indicators typically reveal in similar KC neighborhoods
+- environmental_justice: Cite specific EJScreen indicators provided (minority %, low-income %, EJ Index national percentile, cancer risk, lead paint); if data is unavailable say so plainly
 - market_gap_assessment: Based on business landscape data, 311 patterns, income levels, and community mentions — what goods or services appear underserved; reference specific category gaps
 - policy_implications: Concrete recommendations for investors, city agencies, or community organizations; reference specific 311 service request patterns (abandoned property, street conditions, code violations) and business density gaps as evidence for each recommendation`;
 
@@ -955,10 +1015,12 @@ SECTION GUIDANCE:
         census:    censusData,
         hmda:      hmdaData,
         holc:      holcData ? { grade: holcData.grade, year: holcData.year, description: holcData.description } : null,
+        ejscreen:           ejscreenData,
         businesses:         businessData,
         data_311:           data311,
         sentiment:          sentimentData,
         community_mentions: communityMentions.length,
+        coords: (resolvedLat && resolvedLng) ? { lat: resolvedLat, lng: resolvedLng } : null,
       },
       sections,
     });

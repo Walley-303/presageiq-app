@@ -164,6 +164,10 @@ const DATA_SOURCES = [
 // Edward L. Ayers, accessed 2024, dsl.richmond.edu/panorama/redlining.
 // Grades: A = Best, B = Still Desirable, C = Definitely Declining, D = Hazardous
 const HOLC_KC_NEIGHBORHOODS = {
+  'Troost Corridor': {
+    grade: 'D', year: 1940,
+    description: 'graded "Hazardous" — the Troost Corridor was among the most extensively redlined sections of Kansas City. Troost Avenue itself functioned as a deliberate racial boundary enforced through HOLC appraisal practices, separating investment-grade white neighborhoods to the west from systematically disinvested Black neighborhoods to the east. This boundary produced lasting disparities in wealth accumulation, housing quality, and commercial investment that remain visible today.',
+  },
   'Brookside': {
     grade: 'A', year: 1940,
     description: 'graded "Best" — considered a premier residential district with strong mortgage investment and high property values throughout the HOLC survey period.',
