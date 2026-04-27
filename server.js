@@ -195,6 +195,62 @@ async function initDb() {
     )
   `);
 
+  // ── KC neighborhood boundaries ────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kc_neighborhoods (
+      id           SERIAL PRIMARY KEY,
+      name         TEXT UNIQUE NOT NULL,
+      slug         TEXT UNIQUE NOT NULL,
+      polygon      JSONB,
+      centroid_lat FLOAT,
+      centroid_lng FLOAT,
+      bbox_north   FLOAT,
+      bbox_south   FLOAT,
+      bbox_east    FLOAT,
+      bbox_west    FLOAT,
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── Opportunity Atlas mobility metrics by census tract ────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS opportunity_atlas (
+      id                          SERIAL PRIMARY KEY,
+      tract_id                    TEXT UNIQUE NOT NULL,
+      state_fips                  TEXT,
+      county_fips                 TEXT,
+      tract_fips                  TEXT,
+      neighborhood_name           TEXT,
+      kfr_pooled_pooled_mean      FLOAT,
+      kfr_black_pooled_mean       FLOAT,
+      kfr_white_pooled_mean       FLOAT,
+      kfr_hisp_pooled_mean        FLOAT,
+      jail_pooled_pooled_mean     FLOAT,
+      jail_black_pooled_mean      FLOAT,
+      emp_pooled_pooled_mean      FLOAT,
+      teenbrth_pooled_pooled_mean FLOAT,
+      created_at                  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── KCMO 311 service requests ─────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kc_311_requests (
+      id           SERIAL PRIMARY KEY,
+      request_id   TEXT UNIQUE,
+      category     TEXT,
+      type         TEXT,
+      description  TEXT,
+      neighborhood TEXT,
+      status       TEXT,
+      created_date TIMESTAMPTZ,
+      closed_date  TIMESTAMPTZ,
+      lat          FLOAT,
+      lng          FLOAT,
+      fetched_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   console.log('Database ready.');
 }
 
