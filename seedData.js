@@ -123,16 +123,30 @@ async function seedNeighborhoods(pool) {
 async function seed311Requests(pool, neighborhoodName) {
   const safeName  = neighborhoodName.replace(/'/g, "''");
   const firstWord = neighborhoodName.split(/\s+/)[0].replace(/'/g, "''");
-  const whereClause = neighborhoodName.includes(' ')
-    ? `neighborhood='${safeName}' OR neighborhood='${firstWord}' OR neighborhood like '%${firstWord}%'`
-    : `neighborhood='${safeName}' OR neighborhood like '%${safeName}%'`;
-  const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=${encodeURIComponent(whereClause)}&$limit=500&$order=created_date%20DESC`;
-  console.log(`[311-seed] SOQL: ${whereClause}`);
-  const res = await fetch(url);
-  console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
-  if (!res.ok) throw new Error(`KCMO 311 API error: ${res.status}`);
-  const rows = await res.json();
-  console.log(`[311-seed] ${rows.length} records returned for ${neighborhoodName}`);
+
+  const BASE = 'https://data.kcmo.org/resource/d4px-6rwg.json';
+  const TAIL = '&$limit=500&$order=created_date%20DESC';
+  const whereClauses = [
+    `neighborhood='${safeName}'`,
+    `neighborhood='${firstWord}'`,
+    `neighborhood like '%${firstWord}%'`,
+  ];
+
+  let rows = [];
+  for (const where of whereClauses) {
+    const url = `${BASE}?$where=${encodeURIComponent(where)}${TAIL}`;
+    console.log(`[311-seed] trying SOQL: ${where}`);
+    try {
+      const res = await fetch(url);
+      console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
+      if (!res.ok) { console.warn(`[311-seed] ${res.status} for SOQL: ${where}`); continue; }
+      const data = await res.json();
+      console.log(`[311-seed] ${data.length} records returned for SOQL: ${where}`);
+      if (data.length > 0) { rows = data; break; }
+    } catch (e) {
+      console.warn(`[311-seed] attempt failed: ${e.message}`);
+    }
+  }
 
   let count = 0;
   for (const r of rows) {

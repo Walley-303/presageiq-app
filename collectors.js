@@ -77,12 +77,16 @@ function detectSentiment(text) {
 async function fetchCensusData(zip) {
   if (!zip) return null;
   try {
-    const vars = 'B19013_001E,B01003_001E,B25003_002E,B17001_002E,B15003_022E,B02001_002E,B02001_003E,B03001_003E';
+    const vars = 'B19013_001E,B01003_001E,B25003_002E,B17001_002E,B02001_002E,B02001_003E,B03001_003E,B15003_001E';
     const firstTwo = parseInt(zip.substring(0, 2));
     const primaryState = (firstTwo >= 66 && firstTwo <= 67) ? '20' : '29';
 
     const tryFetch = async (stateCode) => {
-      const url = `https://api.census.gov/data/2023/acs/acs5?get=${vars}&for=zip+code+tabulation+area:${zip}&in=state:${stateCode}`;
+      const u = new URL('https://api.census.gov/data/2023/acs/acs5');
+      u.searchParams.set('get', vars);
+      u.searchParams.set('for', `zip code tabulation area:${zip}`);
+      u.searchParams.set('in', `state:${stateCode}`);
+      const url = u.toString();
       console.log(`[census] GET ${url}`);
       const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
       console.log(`[census] status=${res.status} zip=${zip} state=${stateCode}`);
@@ -104,7 +108,7 @@ async function fetchCensusData(zip) {
     const headers = data[0];
     const values  = data[1];
     const row = Object.fromEntries(headers.map((h, i) => [h, values[i]]));
-    const totalPop    = parseInt(row['B01003_001E']) || 1;
+    const totalPop     = parseInt(row['B01003_001E']) || 1;
     const belowPoverty = parseInt(row['B17001_002E']) || 0;
     return {
       zip,
@@ -116,7 +120,6 @@ async function fetchCensusData(zip) {
       whitePct:      Math.round(parseInt(row['B02001_002E'] || 0) / totalPop * 1000) / 10,
       blackPct:      Math.round(parseInt(row['B02001_003E'] || 0) / totalPop * 1000) / 10,
       hispanicPct:   Math.round(parseInt(row['B03001_003E'] || 0) / totalPop * 1000) / 10,
-      bachelorsPlus: Math.round(parseInt(row['B15003_022E'] || 0) / totalPop * 1000) / 10,
       dataYear: 2023,
     };
   } catch (e) {
@@ -127,54 +130,56 @@ async function fetchCensusData(zip) {
 
 // ── fetchHmdaData — CFPB HMDA mortgage lending patterns for KC metro ──────────
 async function fetchHmdaData() {
-  try {
-    const url = 'https://ffiec.cfpb.gov/api/public/hmda/data/nationwide/aggregations?years=2022&msamd=28140&variable=action_taken';
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) { console.warn(`[hmda] returned ${res.status}`); return null; }
-    const data = await res.json();
-    const aggs = data?.aggregations || data?.data || [];
-    let originated = 0, denied = 0, total = 0;
-    for (const item of aggs) {
-      const actionTaken = parseInt(item.action_taken || item.action_taken_type || 0);
-      const count = parseInt(item.count || 0);
-      total += count;
-      if (actionTaken === 1) originated += count;
-      if (actionTaken === 3) denied += count;
+  const endpoints = [
+    'https://ffiec.cfpb.gov/api/public/hmda/data/nationwide/aggregations?years=2022&msamds=28140',
+    'https://ffiec.cfpb.gov/api/public/hmda/institutions/loans/aggregations?years=2022&msamds=28140',
+  ];
+  for (const url of endpoints) {
+    try {
+      console.log(`[hmda] GET ${url}`);
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      console.log(`[hmda] status=${res.status}`);
+      const body = await res.text();
+      console.log(`[hmda] body[0:200]: ${body.substring(0, 200)}`);
+      if (!res.ok) { console.warn(`[hmda] ${url} returned ${res.status}`); continue; }
+      let data;
+      try { data = JSON.parse(body); } catch (e) { console.warn(`[hmda] JSON parse failed — body may be HTML: ${body.substring(0, 100)}`); continue; }
+      const aggs = data?.aggregations || data?.data || [];
+      if (!Array.isArray(aggs) || !aggs.length) { console.warn('[hmda] no aggregations array in response'); continue; }
+      let originated = 0, denied = 0, total = 0;
+      for (const item of aggs) {
+        const actionTaken = parseInt(item.action_taken || item.action_taken_type || 0);
+        const count = parseInt(item.count || 0);
+        total += count;
+        if (actionTaken === 1) originated += count;
+        if (actionTaken === 3) denied += count;
+      }
+      const applicableTotal = originated + denied;
+      return {
+        msaCode: '28140',
+        year: 2022,
+        totalApplications: total,
+        totalOriginated: originated,
+        totalDenied: denied,
+        overallDenialRate: applicableTotal > 0 ? Math.round(denied / applicableTotal * 1000) / 10 : null,
+        note: 'HMDA data reflects KC metro mortgage lending patterns',
+      };
+    } catch (e) {
+      console.warn(`[hmda] ${url} failed: ${e.message}`);
     }
-    const applicableTotal = originated + denied;
-    return {
-      msaCode: '28140',
-      year: 2022,
-      totalApplications: total,
-      totalOriginated: originated,
-      totalDenied: denied,
-      overallDenialRate: applicableTotal > 0 ? Math.round(denied / applicableTotal * 1000) / 10 : null,
-      note: 'HMDA data reflects KC metro mortgage lending patterns',
-    };
-  } catch (e) {
-    console.warn(`[hmda] failed: ${e.message}`);
-    return null;
   }
+  return null;
 }
 
 // ── fetchEJScreen — EPA environmental justice indicators for a location ────────
 async function fetchEJScreen(lat, lng) {
   if (lat == null || lng == null) return null;
   try {
-    const params = new URLSearchParams({
-      namestr: `${lat},${lng}`,
-      unit: 'miles',
-      distance: '0.5',
-      areatype: 'circle',
-      areaid: '',
-      f: 'json',
-    });
-
     const tryEndpoint = async (endpoint) => {
-      const url = `https://ejscreen.epa.gov/mapper/${endpoint}?${params}`;
+      const url = `https://ejscreen.epa.gov/mapper/${endpoint}?namestr=${lat},${lng}&unit=miles&distance=0.5&areatype=circle&areaid=&f=json`;
       console.log(`[ejscreen] GET ${url}`);
       const res = await fetch(url, {
         headers: { 'Accept': 'application/json' },
@@ -563,12 +568,12 @@ async function fetchNeighborhoodSentiment(neighborhoodName) {
     citizenItems,
   ] = await Promise.all([
     collectRedditPosts(baseQueries, subreddits).catch(() => []),
-    searchCSE(`site:nextdoor.com "${neighborhoodName}" "Kansas City"`, 'nextdoor').catch(() => []),
-    searchCSE(`site:twitter.com OR site:x.com "${neighborhoodName}" "Kansas City"`, 'twitter').catch(() => []),
-    searchCSE(`site:facebook.com/groups "${neighborhoodName}" "Kansas City"`, 'facebook').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City neighborhood site:flatlandkc.org OR site:thepitchkc.com OR site:kcur.org OR site:startlandnews.com`, 'local_news').catch(() => []),
-    searchCSE(`site:yelp.com "${neighborhoodName}" "Kansas City"`, 'yelp').catch(() => []),
-    searchCSE(`site:citizen.com "${neighborhoodName}" "Kansas City"`, 'citizen').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City neighbors community`, 'nextdoor').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City residents 2024 OR 2025`, 'twitter').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City community group`, 'facebook').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City Flatland OR Pitch OR KCUR OR Startland`, 'local_news').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City restaurants shops reviews`, 'yelp').catch(() => []),
+    searchCSE(`"${neighborhoodName}" Kansas City safety incident`, 'citizen').catch(() => []),
   ]);
 
   const cseItems = [...nextdoorItems, ...twitterItems, ...facebookItems, ...newsItems, ...yelpItems, ...citizenItems];
