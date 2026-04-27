@@ -539,6 +539,22 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
     </div>
 
+    <!-- ── DEMOGRAPHIC INTELLIGENCE (Consult / Audit / Retainer) ── -->
+    <div class="panel" id="panel-demographic">
+      <div class="panel-head">
+        <div class="panel-title">Neighborhood Demographics</div>
+        <div class="panel-desc">Census ACS, EPA EJScreen environmental justice indicators, and HMDA mortgage lending data for the business location — auto-gathered with business intelligence.</div>
+      </div>
+      <div class="panel-body">
+        <div id="demographic-intel-status" style="font-size:11px;color:var(--text3);margin-bottom:12px;min-height:14px;"></div>
+        <div id="demographic-intel-content"></div>
+        <div style="margin-top:16px;">
+          <div style="font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Supplementary Notes</div>
+          <textarea class="fta" id="demo-notes" placeholder="Add demographic context, observed patterns, or notes about this neighborhood..." style="min-height:60px;"></textarea>
+        </div>
+      </div>
+    </div>
+
     <!-- ── KC PRESS COVERAGE / COMMUNITY (Consult/Audit/Retainer) ── -->
     <div class="panel" id="panel-press">
       <div class="panel-head">
@@ -961,6 +977,7 @@ const TIER_MODULES = {
     { id:'setup',       icon:'◎', label:'Client Setup' },
     { id:'reviews',     icon:'◉', label:'Review Signals' },
     { id:'competitors', icon:'▤', label:'Competitor Intel' },
+    { id:'demographic', icon:'▦', label:'Demographics' },
     { id:'press',       icon:'◈', label:'KC Press Coverage' },
     { id:'score',       icon:'◆', label:'Opportunity Score' },
     { id:'brief',       icon:'▸', label:'Consult Brief' },
@@ -971,6 +988,7 @@ const TIER_MODULES = {
     { id:'competitors', icon:'▤', label:'Competitor Intel' },
     { id:'menu',        icon:'▤', label:'Menu Analysis' },
     { id:'inventory',   icon:'▥', label:'Inventory & Supply' },
+    { id:'demographic', icon:'▦', label:'Demographics' },
     { id:'press',       icon:'◈', label:'KC Press Coverage' },
     { id:'score',       icon:'◆', label:'Opportunity Score' },
     { id:'brief',       icon:'▸', label:'Executive Brief' },
@@ -978,6 +996,7 @@ const TIER_MODULES = {
   retainer: [
     { id:'setup',       icon:'◎', label:'Client Setup' },
     { id:'reviews',     icon:'◉', label:'Monthly Signals' },
+    { id:'demographic', icon:'▦', label:'Demographics' },
     { id:'press',       icon:'▤', label:'Trend Analysis' },
     { id:'score',       icon:'◆', label:'Opportunity Score' },
     { id:'brief',       icon:'▸', label:'Monthly Brief' },
@@ -1413,6 +1432,79 @@ function renderSocialIntelCards(socialIntel) {
   }
 }
 
+function renderDemographicIntel(demographicIntel, scoreBreakdown) {
+  const container = document.getElementById('demographic-intel-content');
+  if (!container) return;
+
+  const { census, hmda, ejscreen, kcPop } = demographicIntel || {};
+  if (!census && !hmda && !ejscreen && !kcPop) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">Demographic data unavailable for this location.</div>';
+    return;
+  }
+
+  const fmt       = v => (v != null ? String(v) : '—');
+  const fmtPct    = v => (v != null ? v + '%' : '—');
+  const fmtDollar = v => (v != null ? '$' + Number(v).toLocaleString() : '—');
+  const fmtNum    = v => (v != null && v !== 0 ? Number(v).toLocaleString() : '—');
+
+  const dataRow = (label, value) =>
+    `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border);">` +
+    `<span style="font-size:10px;color:var(--text3);">${label}</span>` +
+    `<span style="font-size:11px;color:var(--text);font-weight:500;">${value}</span></div>`;
+
+  const card = (label, rows, note) =>
+    `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:14px 16px;">` +
+    `<div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:10px;">${label}</div>` +
+    rows.map(([k, v]) => dataRow(escHtml(k), escHtml(v))).join('') +
+    (note ? `<div style="margin-top:8px;font-size:10px;color:var(--text3);line-height:1.6;font-style:italic;">${note}</div>` : '') +
+    `</div>`;
+
+  const censusCard = card('Census Profile · ACS 2023', [
+    ['Median Household Income', fmtDollar(census?.medianIncome)],
+    ['Poverty Rate',            fmtPct(census?.povertyRate)],
+    ['Total Population',        fmtNum(census?.totalPop)],
+    ['Owner-Occupied Units',    fmtNum(census?.ownerOccupied)],
+  ]);
+
+  const raceCard = card('Racial & Ethnic Composition', [
+    ['White',                    fmtPct(census?.whitePct)],
+    ['Black / African American', fmtPct(census?.blackPct)],
+    ['Hispanic / Latino',        fmtPct(census?.hispanicPct)],
+    ['College-Educated (Bach+)', fmtPct(census?.bachelorsPlus)],
+  ]);
+
+  const ejCard = card('EJScreen · Environmental Justice', [
+    ['EJ Index National Percentile', fmt(ejscreen?.ejIndexNationalPct)],
+    ['Minority Population',          fmtPct(ejscreen?.minorityPct)],
+    ['Low-Income Population',        fmtPct(ejscreen?.lowIncomePct)],
+    ['Lead Paint Indicator',         fmtPct(ejscreen?.leadPaintPct)],
+    ['Diesel PM Proximity',          fmt(ejscreen?.dieselPM)],
+  ], 'Higher percentile = greater environmental burden relative to national average.');
+
+  const hmdaCard = card('Mortgage Lending Context · HMDA', [
+    ['Overall Denial Rate (KC Metro)', hmda?.overallDenialRate != null ? hmda.overallDenialRate + '%' : '—'],
+    ['Total Applications',             fmtNum(hmda?.totalApplications)],
+    ['Originated',                     fmtNum(hmda?.totalOriginated)],
+    ['Denied',                         fmtNum(hmda?.totalDenied)],
+  ], 'KC metro 2022 mortgage lending data. Higher denial rates in historically redlined neighborhoods reflect ongoing capital access disparities.');
+
+  const holcInfo = scoreBreakdown?.holc_info;
+  const holcBlock = holcInfo
+    ? `<div style="margin-top:14px;background:rgba(200,150,62,.04);border-left:3px solid var(--gold);border-radius:0 5px 5px 0;padding:12px 16px;">` +
+      `<div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">Historical Context · HOLC Grade ${escHtml(String(holcInfo.grade))} (${escHtml(String(holcInfo.year))})</div>` +
+      `<div style="font-size:11px;color:var(--text2);line-height:1.75;">${escHtml(holcInfo.note || holcInfo.description || '')}</div>` +
+      `<div style="margin-top:6px;font-size:10px;color:var(--text3);">Source: <a href="https://dsl.richmond.edu/panorama/redlining" target="_blank" rel="noopener" style="color:var(--text3);text-decoration:underline;">Mapping Inequality</a> · Robert K. Nelson et al., American Panorama</div>` +
+      `</div>`
+    : '';
+
+  container.innerHTML =
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">` +
+    censusCard + raceCard + ejCard + hmdaCard +
+    `</div>` + holcBlock;
+
+  markDone('demographic');
+}
+
 function silentlyPopulateIntel(data) {
   const place = data.place_data || {};
   const competitors = data.competitors || [];
@@ -1436,6 +1528,7 @@ function silentlyPopulateIntel(data) {
     markDone('competitors');
   }
   if (data.social_intel) renderSocialIntelCards(data.social_intel);
+  if (data.demographic_intel) renderDemographicIntel(data.demographic_intel, data.score_breakdown);
 }
 
 // ── Refresh Intel (wipes all cached intel, runs full fresh scrape) ──────────
@@ -1480,9 +1573,11 @@ async function refreshIntel() {
   const bizCard = document.getElementById('biz-profile-card');
   const compCards = document.getElementById('comp-list-cards');
   const compAuto = document.getElementById('comp-list-auto');
+  const demographicContent = document.getElementById('demographic-intel-content');
   if (reviewBody) reviewBody.innerHTML = '';
   if (compBody) compBody.innerHTML = '';
   if (socialCards) { socialCards.innerHTML = ''; socialCards.style.display = 'none'; }
+  if (demographicContent) demographicContent.innerHTML = '';
   if (bizCard) bizCard.style.display = 'none';
   if (compCards) compCards.innerHTML = '';
   if (compAuto) compAuto.style.display = 'none';
