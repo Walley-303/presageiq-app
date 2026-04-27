@@ -2,10 +2,10 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
-const { makeCollectors } = require('./collectors');
+const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
-const { DATA_SOURCES } = require('./dataSources');
+const { DATA_SOURCES, getHolcData } = require('./dataSources');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -740,6 +740,147 @@ app.get('/api/intel/score/:clientId', async (req, res) => {
 });
 
 app.get('/methodology', (req, res) => res.sendFile(path.join(__dirname, 'public', 'methodology.html')));
+
+app.get('/civiciq', (req, res) => res.sendFile(path.join(__dirname, 'public', 'civiciq.html')));
+
+// ── CivicIQ neighborhood intelligence report ──────────────────────────────────
+app.post('/api/civiciq/report', async (req, res) => {
+  const { neighborhood, zip } = req.body;
+  if (!neighborhood) return res.status(400).json({ error: 'neighborhood is required' });
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
+
+  try {
+    // ── 1. Parallel data collection ───────────────────────────────────────────
+    const [censusData, hmdaData, communityRows, businessCountRow] = await Promise.all([
+      zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
+      fetchHmdaData().catch(() => null),
+      pool.query(`
+        SELECT source, title, body, url, post_date, score, sentiment
+        FROM community_intel
+        WHERE $1 = ANY(neighborhoods)
+          AND collected_at >= NOW() - INTERVAL '90 days'
+        ORDER BY score DESC NULLS LAST, collected_at DESC
+        LIMIT 20
+      `, [neighborhood]).catch(() => ({ rows: [] })),
+      pool.query(`
+        SELECT COUNT(*) AS cnt
+        FROM business_profiles
+        WHERE LOWER(neighborhood) = LOWER($1)
+      `, [neighborhood]).catch(() => ({ rows: [{ cnt: 0 }] })),
+    ]);
+
+    const ejscreenData = null; // EJScreen requires lat/lng; neighborhood-only requests skip it
+
+    const holcData = getHolcData(neighborhood);
+
+    const communityMentions = communityRows.rows || [];
+    const businessCount = parseInt(businessCountRow.rows[0]?.cnt || 0);
+
+    // ── 2. Build AI context ───────────────────────────────────────────────────
+    const censusContext = censusData ? [
+      censusData.medianIncome   ? `Median household income: $${Number(censusData.medianIncome).toLocaleString()}` : null,
+      censusData.povertyRate    != null ? `Poverty rate: ${censusData.povertyRate}%` : null,
+      censusData.bachelorsPlus  != null ? `College-educated: ${censusData.bachelorsPlus}%` : null,
+      censusData.totalPop       ? `Total population (ZIP): ${Number(censusData.totalPop).toLocaleString()}` : null,
+      censusData.whitePct       != null ? `White: ${censusData.whitePct}%` : null,
+      censusData.blackPct       != null ? `Black/African American: ${censusData.blackPct}%` : null,
+      censusData.hispanicPct    != null ? `Hispanic/Latino: ${censusData.hispanicPct}%` : null,
+    ].filter(Boolean).join(' | ') : 'Census data not available (no ZIP provided).';
+
+    const hmdaContext = hmdaData
+      ? `KC Metro (MSA 28140) overall mortgage denial rate: ${hmdaData.overallDenialRate}% (${(hmdaData.totalDenied||0).toLocaleString()} denied of ${((hmdaData.totalOriginated||0)+(hmdaData.totalDenied||0)).toLocaleString()} applications, 2022)`
+      : 'HMDA lending data: not available.';
+
+    const holcContext = holcData
+      ? `HOLC grade: ${holcData.grade} (${holcData.year}). ${holcData.description || ''}`
+      : 'No HOLC historical redlining record for this neighborhood.';
+
+    const communityContext = communityMentions.length
+      ? communityMentions.map(m =>
+          `[${m.source}] ${m.title || ''} (${m.sentiment || 'neutral'}): ${(m.body || '').substring(0, 200)}`
+        ).join('\n')
+      : 'No recent community mentions in database (last 90 days).';
+
+    const prompt = `You are producing a CivicIQ Neighborhood Intelligence Report for "${neighborhood}" (Kansas City metro area). Write a rigorous, data-grounded report using the evidence provided. Do not fabricate data. If a section lacks data, say so plainly.
+
+DATA PROVIDED:
+
+CENSUS ACS PROFILE (ZIP ${zip || 'not provided'}):
+${censusContext}
+
+MORTGAGE LENDING (HMDA 2022, KC Metro):
+${hmdaContext}
+
+HOLC HISTORICAL REDLINING:
+${holcContext}
+
+BUSINESSES IN DATABASE FOR THIS NEIGHBORHOOD: ${businessCount}
+
+RECENT COMMUNITY MENTIONS (last 90 days, up to 20):
+${communityContext}
+
+---
+
+Output ONLY a valid JSON object with exactly these 7 keys. Each value is a string of 3-5 sentences:
+
+{
+  "executive_summary": "...",
+  "economic_conditions": "...",
+  "historical_capital_access": "...",
+  "community_demographics": "...",
+  "environmental_justice": "...",
+  "market_gap_assessment": "...",
+  "policy_implications": "..."
+}
+
+SECTION GUIDANCE:
+- executive_summary: Top-level synthesis — what defines this neighborhood economically and socially right now
+- economic_conditions: Income levels, poverty, business density, employment signals from available data
+- historical_capital_access: HOLC redlining history and its documented downstream effects on wealth, homeownership, and lending; cite the HMDA denial rate data
+- community_demographics: Population composition from Census — race/ethnicity, education, age if known
+- environmental_justice: If EJScreen data is available use it; otherwise note the absence and discuss what EJ indicators typically reveal in similar KC neighborhoods
+- market_gap_assessment: Based on business count, income levels, and community mentions — what goods or services appear underserved
+- policy_implications: Concrete recommendations for investors, city agencies, or community organizations operating in this neighborhood`;
+
+    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 1200,
+        messages: [
+          { role: 'system', content: 'You are a rigorous neighborhood intelligence analyst. Output only valid JSON. Never add text before or after the JSON object.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    });
+
+    const aiData = await aiRes.json();
+    const raw = aiData.choices?.[0]?.message?.content || '';
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return res.status(500).json({ error: 'AI did not return valid JSON' });
+    const sections = JSON.parse(jsonMatch[0]);
+
+    res.json({
+      neighborhood,
+      zip: zip || null,
+      generated_at: new Date().toISOString(),
+      data: {
+        census:    censusData,
+        hmda:      hmdaData,
+        holc:      holcData ? { grade: holcData.grade, year: holcData.year, description: holcData.description } : null,
+        business_count: businessCount,
+        community_mentions: communityMentions.length,
+      },
+      sections,
+    });
+  } catch (err) {
+    console.error('[civiciq]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Fallback ──────────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {

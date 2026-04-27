@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CivicIQ — Neighborhood Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0a0d12;
+      --surface: #10151e;
+      --border:  #1e2636;
+      --gold:    #c8963e;
+      --teal:    #52c5b0;
+      --text:    #e2e8f0;
+      --muted:   #6b7a99;
+      --danger:  #e05c5c;
+      --mono:    'DM Mono', monospace;
+      --sans:    'Inter', sans-serif;
+      --display: 'Syne', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--gold), var(--teal));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 18px;
+      color: var(--bg);
+      flex-shrink: 0;
+    }
+    .header-text { display: flex; flex-direction: column; gap: 1px; }
+    .header-title {
+      font-family: var(--display);
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: #fff;
+    }
+    .header-title span { color: var(--teal); }
+    .header-sub {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+    .header-nav {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+    .nav-link {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: color .15s, border-color .15s;
+    }
+    .nav-link:hover { color: var(--text); border-color: var(--muted); }
+
+    /* ── Main layout ── */
+    .main { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+
+    /* ── Search form ── */
+    .search-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 40px;
+    }
+    .search-eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: var(--teal);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .search-heading {
+      font-family: var(--display);
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+      letter-spacing: -0.4px;
+    }
+    .search-desc {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 140px auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .form-input {
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color .15s;
+      width: 100%;
+    }
+    .form-input:focus { border-color: var(--teal); }
+    .form-input::placeholder { color: var(--muted); }
+    .btn-generate {
+      background: var(--gold);
+      border: none;
+      border-radius: 8px;
+      color: var(--bg);
+      cursor: pointer;
+      font-family: var(--display);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 11px 22px;
+      transition: opacity .15s;
+      white-space: nowrap;
+      align-self: end;
+    }
+    .btn-generate:hover { opacity: .85; }
+    .btn-generate:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: rgba(82,197,176,.07);
+      border: 1px solid rgba(82,197,176,.2);
+      border-radius: 8px;
+      margin-bottom: 32px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--teal);
+    }
+    .status-bar.visible { display: flex; }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(82,197,176,.25);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err-bar {
+      display: none;
+      padding: 14px 20px;
+      background: rgba(224,92,92,.07);
+      border: 1px solid rgba(224,92,92,.2);
+      border-radius: 8px;
+      margin-bottom: 32px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--danger);
+    }
+    .err-bar.visible { display: block; }
+
+    /* ── Report output ── */
+    #report-output { display: none; }
+    #report-output.visible { display: block; }
+
+    .report-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+    .report-title-block {}
+    .report-eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .report-name {
+      font-family: var(--display);
+      font-size: 30px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .report-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .btn-download {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 9px 18px;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-download:hover { color: var(--text); border-color: var(--muted); }
+
+    /* ── Data facts strip ── */
+    .data-facts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .fact-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .fact-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .fact-value {
+      font-family: var(--display);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--teal);
+    }
+    .fact-sub {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Sections ── */
+    .sections { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: rgba(82,197,176,.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .section-title {
+      font-family: var(--display);
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.1px;
+    }
+    .section-body {
+      padding: 20px 22px;
+      line-height: 1.75;
+      color: #b8c5d6;
+      font-size: 14px;
+    }
+
+    /* ── HOLC badge ── */
+    .holc-block {
+      background: rgba(200,150,62,.04);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin: 0 22px 20px;
+      font-size: 13px;
+      color: #c4af84;
+      line-height: 1.6;
+    }
+    .holc-grade {
+      font-family: var(--display);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold);
+      margin-bottom: 4px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ── Sources ── */
+    .sources-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+    }
+    .sources-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .source-list { display: flex; flex-direction: column; gap: 8px; }
+    .source-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .source-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--teal);
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 640px) {
+      .form-row { grid-template-columns: 1fr; }
+      .header { flex-wrap: wrap; }
+      .header-nav { margin-left: 0; }
+      .report-header { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo-mark">C</div>
+  <div class="header-text">
+    <div class="header-title">Civic<span>IQ</span></div>
+    <div class="header-sub">NEIGHBORHOOD INTELLIGENCE — PRESAGEIQ PLATFORM</div>
+  </div>
+  <nav class="header-nav">
+    <a class="nav-link" href="/">Consult</a>
+    <a class="nav-link" href="/marketiq">MarketIQ</a>
+  </nav>
+</header>
+
+<main class="main">
+
+  <div class="search-card">
+    <div class="search-eyebrow">Intelligence Report</div>
+    <div class="search-heading">Neighborhood Deep Dive</div>
+    <div class="search-desc">
+      Generate a 7-section AI report synthesizing Census demographics, HOLC redlining history,
+      HMDA mortgage lending patterns, environmental justice indicators, and community database
+      signals for any Kansas City neighborhood.
+    </div>
+    <form id="civiciq-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="nbhd-input">Neighborhood Name</label>
+          <input class="form-input" id="nbhd-input" type="text"
+            placeholder="e.g. Swope Park, Westport, Historic Northeast" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="zip-input">ZIP Code (optional)</label>
+          <input class="form-input" id="zip-input" type="text"
+            placeholder="64109" maxlength="5" autocomplete="off" />
+        </div>
+        <button class="btn-generate" id="generate-btn" type="submit">Generate Report</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="status-bar" id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-text">Collecting neighborhood data...</span>
+  </div>
+
+  <div class="err-bar" id="err-bar"></div>
+
+  <div id="report-output">
+
+    <div class="report-header">
+      <div class="report-title-block">
+        <div class="report-eyebrow">CivicIQ Neighborhood Intelligence Report</div>
+        <div class="report-name" id="rpt-name"></div>
+        <div class="report-meta" id="rpt-meta"></div>
+      </div>
+      <button class="btn-download" id="download-btn">&#8595; Download JSON</button>
+    </div>
+
+    <div class="data-facts" id="data-facts"></div>
+
+    <div class="sections" id="sections-container"></div>
+
+    <div class="sources-section">
+      <div class="sources-title">Data Sources</div>
+      <div class="source-list">
+        <div class="source-item"><div class="source-dot"></div><span>U.S. Census Bureau — American Community Survey (ACS 5-Year Estimates, 2023)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>CFPB — Home Mortgage Disclosure Act (HMDA) Aggregations, KC Metro MSA 28140, 2022</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>Mapping Inequality — HOLC Historical Redlining Grades (University of Richmond Digital Scholarship Lab)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>PresageIQ Community Intelligence Database — Reddit, GDELT, KC media (last 90 days)</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>PresageIQ Business Profiles — KCMO Open Data, Foursquare</span></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  const SECTIONS = [
+    { key: 'executive_summary',        label: 'Executive Summary',             icon: '◈' },
+    { key: 'economic_conditions',       label: 'Economic Conditions',           icon: '▲' },
+    { key: 'historical_capital_access', label: 'Historical Capital Access',     icon: '◉' },
+    { key: 'community_demographics',    label: 'Community Demographics',        icon: '▦' },
+    { key: 'environmental_justice',     label: 'Environmental Justice',         icon: '⬡' },
+    { key: 'market_gap_assessment',     label: 'Market Gap Assessment',         icon: '◇' },
+    { key: 'policy_implications',       label: 'Policy Implications',           icon: '▷' },
+  ];
+
+  let lastReport = null;
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function setStatus(msg) {
+    const bar = document.getElementById('status-bar');
+    document.getElementById('status-text').textContent = msg;
+    bar.classList.add('visible');
+  }
+
+  function clearStatus() {
+    document.getElementById('status-bar').classList.remove('visible');
+  }
+
+  function showErr(msg) {
+    const bar = document.getElementById('err-bar');
+    bar.textContent = 'Error: ' + msg;
+    bar.classList.add('visible');
+  }
+
+  function clearErr() {
+    document.getElementById('err-bar').classList.remove('visible');
+  }
+
+  function renderReport(report) {
+    lastReport = report;
+    const d = report.data || {};
+
+    document.getElementById('rpt-name').textContent = report.neighborhood;
+    const ts = new Date(report.generated_at).toLocaleString('en-US', {
+      dateStyle: 'medium', timeStyle: 'short'
+    });
+    document.getElementById('rpt-meta').textContent =
+      (report.zip ? `ZIP ${report.zip} · ` : '') + `Generated ${ts}`;
+
+    // ── Data facts ──
+    const facts = [];
+    if (d.census?.medianIncome) {
+      facts.push({ label: 'Median Income', value: `$${Number(d.census.medianIncome).toLocaleString()}`, sub: 'Household (ACS)' });
+    }
+    if (d.census?.povertyRate != null) {
+      facts.push({ label: 'Poverty Rate', value: `${d.census.povertyRate}%`, sub: 'Below poverty line' });
+    }
+    if (d.hmda?.overallDenialRate != null) {
+      facts.push({ label: 'Mortgage Denial', value: `${d.hmda.overallDenialRate}%`, sub: 'KC Metro 2022 (HMDA)' });
+    }
+    if (d.holc?.grade) {
+      facts.push({ label: 'HOLC Grade', value: d.holc.grade, sub: `${d.holc.year} redlining map` });
+    }
+    if (d.business_count != null) {
+      facts.push({ label: 'Businesses', value: Number(d.business_count).toLocaleString(), sub: 'In PresageIQ database' });
+    }
+    if (d.community_mentions != null) {
+      facts.push({ label: 'Community Signals', value: d.community_mentions, sub: 'Mentions (last 90 days)' });
+    }
+
+    document.getElementById('data-facts').innerHTML = facts.map(f => `
+      <div class="fact-card">
+        <div class="fact-label">${esc(f.label)}</div>
+        <div class="fact-value">${esc(f.value)}</div>
+        <div class="fact-sub">${esc(f.sub)}</div>
+      </div>
+    `).join('');
+
+    // ── Sections ──
+    const holcInfo = d.holc;
+    const sectionsHtml = SECTIONS.map(s => {
+      const text = report.sections?.[s.key] || 'No data available for this section.';
+      const isHistorical = s.key === 'historical_capital_access';
+      const holcBlock = (isHistorical && holcInfo?.grade && (holcInfo.grade === 'C' || holcInfo.grade === 'D'))
+        ? `<div class="holc-block">
+             <div class="holc-grade">HOLC Grade ${esc(holcInfo.grade)} — ${esc(holcInfo.year)}</div>
+             ${esc(holcInfo.description || '')}
+           </div>`
+        : '';
+      return `
+        <div class="section-card">
+          <div class="section-head">
+            <div class="section-icon">${esc(s.icon)}</div>
+            <div class="section-title">${esc(s.label)}</div>
+          </div>
+          ${holcBlock}
+          <div class="section-body">${esc(text)}</div>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('sections-container').innerHTML = sectionsHtml;
+    document.getElementById('report-output').classList.add('visible');
+    document.getElementById('report-output').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('civiciq-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const neighborhood = document.getElementById('nbhd-input').value.trim();
+    const zip = document.getElementById('zip-input').value.trim();
+    if (!neighborhood) return;
+
+    clearErr();
+    document.getElementById('report-output').classList.remove('visible');
+    document.getElementById('generate-btn').disabled = true;
+    setStatus('Collecting neighborhood data...');
+
+    try {
+      setStatus('Querying Census, HMDA, community database...');
+      const res = await fetch('/api/civiciq/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ neighborhood, zip: zip || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+      setStatus('Synthesizing AI report...');
+      clearStatus();
+      renderReport(data);
+    } catch (err) {
+      clearStatus();
+      showErr(err.message);
+    } finally {
+      document.getElementById('generate-btn').disabled = false;
+    }
+  });
+
+  document.getElementById('download-btn').addEventListener('click', () => {
+    if (!lastReport) return;
+    const blob = new Blob([JSON.stringify(lastReport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `civiciq-${lastReport.neighborhood.toLowerCase().replace(/\s+/g,'-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>
