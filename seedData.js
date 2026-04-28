@@ -63,7 +63,7 @@ const kcmoHeaders = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
-  const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON';
+  const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON&format=geojson';
   console.log(`[seed] fetching neighborhood boundaries from GeoJSON export endpoint`);
 
   const geoRes = await fetch(geoUrl, { headers: kcmoHeaders });
