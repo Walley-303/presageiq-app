@@ -3,9 +3,6 @@
 
 const crypto = require('crypto');
 
-// FIX 6: CSE 403 startup warning — fires at module load so it is visible in Railway logs
-console.warn('[cse] WARNING: All CSE neighborhood queries returning 403. To fix: go to Google Cloud Console > Custom Search Engine > Edit > Search the entire web > ON. CX:', process.env.GOOGLE_SEARCH_CX);
-
 // ── KC Neighborhood Definitions ───────────────────────────────────────────────
 const KC_NEIGHBORHOODS = [
   { name: 'Waldo',               zip: '64131', lat: 38.9468, lng: -94.5922, aliases: ['waldo'] },
@@ -502,25 +499,27 @@ async function collectRedditPosts(queries, subreddits) {
   return posts;
 }
 
-async function searchCSE(query, tag) {
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const cx     = process.env.GOOGLE_SEARCH_CX;
-  if (!apiKey || !cx) return [];
+async function fetchGoogleNewsRSS(query, tag) {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
   try {
-    const params = new URLSearchParams({ key: apiKey, cx, q: query, num: '5' });
-    const url = `https://www.googleapis.com/customsearch/v1?${params}`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) { console.warn(`[cse:${tag}] status=${r.status}`); return []; }
-    const data = await r.json();
-    return (data.items || []).map(item => ({
-      title:     (item.title || '').substring(0, 150),
-      body:      (item.snippet || '').substring(0, 300),
-      url:       item.link || null,
-      source:    tag,
-      sentiment: null,
-    }));
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'PresageIQ/1.0' } });
+    if (!r.ok) { console.warn(`[rss:${tag}] status=${r.status}`); return []; }
+    const xml = await r.text();
+    const items = [];
+    const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+    for (const m of itemMatches) {
+      const block = m[1];
+      const title = (block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || block.match(/<title>(.*?)<\/title>/) || [])[1] || '';
+      const desc  = (block.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || block.match(/<description>(.*?)<\/description>/) || [])[1] || '';
+      const link  = (block.match(/<link>(.*?)<\/link>/) || [])[1] || null;
+      if (!title) continue;
+      items.push({ title: title.substring(0, 150), body: desc.replace(/<[^>]+>/g, '').substring(0, 300), url: link, source: tag, sentiment: null });
+      if (items.length >= 10) break;
+    }
+    console.log(`[rss:${tag}] ${items.length} items for query: ${query}`);
+    return items;
   } catch (e) {
-    console.warn(`[cse:${tag}] failed: ${e.message}`);
+    console.warn(`[rss:${tag}] failed: ${e.message}`);
     return [];
   }
 }
@@ -578,26 +577,18 @@ async function fetchNeighborhoodSentiment(neighborhoodName) {
 
   const [
     redditPosts,
-    nextdoorItems,
-    twitterItems,
-    facebookItems,
     newsItems,
-    yelpItems,
-    citizenItems,
+    localNewsItems,
   ] = await Promise.all([
     collectRedditPosts(baseQueries, subreddits).catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City neighbors community`, 'nextdoor').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City residents 2024 OR 2025`, 'twitter').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City community group`, 'facebook').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City Flatland OR Pitch OR KCUR OR Startland`, 'local_news').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City restaurants shops reviews`, 'yelp').catch(() => []),
-    searchCSE(`"${neighborhoodName}" Kansas City safety incident`, 'citizen').catch(() => []),
+    fetchGoogleNewsRSS(`${neighborhoodName} Kansas City`, 'news').catch(() => []),
+    fetchGoogleNewsRSS(`${neighborhoodName} Kansas City neighborhood`, 'local_news').catch(() => []),
   ]);
 
-  const cseItems = [...nextdoorItems, ...twitterItems, ...facebookItems, ...newsItems, ...yelpItems, ...citizenItems];
-  const scoredCSE = await batchSentiment(cseItems);
+  const rssItems = [...newsItems, ...localNewsItems];
+  const scoredRSS = await batchSentiment(rssItems);
 
-  const allPosts = [...redditPosts, ...scoredCSE];
+  const allPosts = [...redditPosts, ...scoredRSS];
 
   const counts = { positive: 0, negative: 0, neutral: 0 };
   allPosts.forEach(p => { counts[p.sentiment] = (counts[p.sentiment] || 0) + 1; });
@@ -611,12 +602,8 @@ async function fetchNeighborhoodSentiment(neighborhoodName) {
     signalCount: allPosts.length,
     sourceBreakdown: {
       reddit:     redditPosts.length,
-      nextdoor:   nextdoorItems.length,
-      twitter:    twitterItems.length,
-      facebook:   facebookItems.length,
-      local_news: newsItems.length,
-      yelp:       yelpItems.length,
-      citizen:    citizenItems.length,
+      news:       newsItems.length,
+      local_news: localNewsItems.length,
     },
     neighborhood: neighborhoodName,
   };
