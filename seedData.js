@@ -58,12 +58,14 @@ function num(v) {
   return (v === '' || v == null) ? null : parseFloat(v);
 }
 
+const kcmoHeaders = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
+
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
   // Step 1: Discover actual field names before bulk fetch
   try {
-    const discoverRes = await fetch('https://data.kcmo.org/resource/q45j-ejyk.json?$limit=1');
+    const discoverRes = await fetch('https://data.kcmo.org/resource/q45j-ejyk.json?$limit=1', { headers: kcmoHeaders });
     console.log(`[seed] neighborhood schema discovery status=${discoverRes.status}`);
     if (discoverRes.ok) {
       const discoverData = await discoverRes.json();
@@ -82,7 +84,7 @@ async function seedNeighborhoods(pool) {
   console.log(`[seed] fetching neighborhoods from ${primaryUrl}`);
   let features = [];
 
-  const primaryRes = await fetch(primaryUrl);
+  const primaryRes = await fetch(primaryUrl, { headers: kcmoHeaders });
   console.log(`[seed] neighborhoods primary status=${primaryRes.status}`);
   const primaryBody = await primaryRes.text();
   console.log(`[seed] neighborhoods primary body[0:200]: ${primaryBody.substring(0, 200)}`);
@@ -95,7 +97,7 @@ async function seedNeighborhoods(pool) {
     const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON';
     console.log(`[seed] primary returned 0 records, trying GeoJSON: ${geoUrl}`);
     try {
-      const geoRes = await fetch(geoUrl);
+      const geoRes = await fetch(geoUrl, { headers: kcmoHeaders });
       console.log(`[seed] neighborhoods GeoJSON status=${geoRes.status}`);
       if (geoRes.ok) {
         const geoData = await geoRes.json();
@@ -192,7 +194,7 @@ async function seedNeighborhoods(pool) {
 async function seed311Requests(pool, neighborhoodName) {
   // Discover actual field names before attempting neighborhood filter queries
   try {
-    const metaRes = await fetch('https://data.kcmo.org/api/views/d4px-6rwg.json', { signal: AbortSignal.timeout(8000) });
+    const metaRes = await fetch('https://data.kcmo.org/api/views/d4px-6rwg.json', { headers: kcmoHeaders, signal: AbortSignal.timeout(8000) });
     console.log(`[311-seed] metadata status=${metaRes.status}`);
     if (metaRes.ok) {
       const meta = await metaRes.json();
@@ -203,7 +205,7 @@ async function seed311Requests(pool, neighborhoodName) {
     console.warn(`[311-seed] metadata fetch failed: ${e.message}`);
   }
   try {
-    const sampleRes = await fetch('https://data.kcmo.org/resource/d4px-6rwg.json?$limit=5', { signal: AbortSignal.timeout(8000) });
+    const sampleRes = await fetch('https://data.kcmo.org/resource/d4px-6rwg.json?$limit=5', { headers: kcmoHeaders, signal: AbortSignal.timeout(8000) });
     console.log(`[311-seed] sample status=${sampleRes.status}`);
     if (sampleRes.ok) {
       const sample = await sampleRes.json();
@@ -236,7 +238,7 @@ async function seed311Requests(pool, neighborhoodName) {
       const url = `${dataset.base}?$where=${encodeURIComponent(where)}${tail}`;
       console.log(`[311-seed] trying ${dataset.base.split('/').pop()} SOQL: ${where}`);
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: kcmoHeaders });
         console.log(`[311-seed] status=${res.status} neighborhood=${neighborhoodName}`);
         if (!res.ok) {
           const errBody = await res.text();

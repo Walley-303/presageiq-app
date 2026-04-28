@@ -3,6 +3,8 @@
 
 const crypto = require('crypto');
 
+const kcmoHeaders = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
+
 // ── KC Neighborhood Definitions ───────────────────────────────────────────────
 const KC_NEIGHBORHOODS = [
   { name: 'Waldo',               zip: '64131', lat: 38.9468, lng: -94.5922, aliases: ['waldo'] },
@@ -243,7 +245,7 @@ async function fetchKCNeighborhoodPop(neighborhood) {
     const nbhd = neighborhood.replace(/'/g, "''");
     const url = `https://data.kcmo.org/resource/7nq4-imiw.json?$where=${encodeURIComponent(`neighborhood_name like '%${nbhd}%'`)}`;
     const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
+      headers: { ...kcmoHeaders, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) { console.warn(`[kcpop] returned ${res.status}`); return null; }
@@ -387,7 +389,32 @@ async function fetchNeighborhoodBusinesses(pool, neighborhoodName) {
 
 // ── fetch311Data — Query 7at3-sxhp with neighborhood filter; fall back to no-filter then d4px-6rwg ─
 async function fetch311Data(pool, neighborhoodName) {
-  const nbhdFilter = encodeURIComponent(`neighborhood='${neighborhoodName.replace(/'/g, "''")}'`);
+  // Discover the exact neighborhood name used in the 311 dataset by querying by ZIP,
+  // since names like "Troost Corridor" may not match the dataset's spelling exactly.
+  let effectiveName = neighborhoodName;
+  const nbhdDef = KC_NEIGHBORHOODS.find(n => n.name === neighborhoodName);
+  if (nbhdDef?.zip) {
+    try {
+      const discoverUrl = `https://data.kcmo.org/resource/7at3-sxhp.json?$where=${encodeURIComponent(`zipcode='${nbhdDef.zip}'`)}&$limit=5&$order=creation_date+DESC`;
+      console.log(`[311] discovering neighborhood names in zip ${nbhdDef.zip}`);
+      const dRes = await fetch(discoverUrl, { headers: kcmoHeaders, signal: AbortSignal.timeout(8000) });
+      if (dRes.ok) {
+        const dData = await dRes.json();
+        const discovered = [...new Set(dData.map(r => r.neighborhood).filter(Boolean))];
+        console.log(`[311] names in zip ${nbhdDef.zip}: ${discovered.join(', ')}`);
+        const firstWord = neighborhoodName.split(/\s+/)[0].toLowerCase();
+        const match = discovered.find(n => n.toLowerCase().includes(firstWord) || firstWord.includes(n.toLowerCase()));
+        if (match && match !== neighborhoodName) {
+          console.log(`[311] using discovered name "${match}" instead of "${neighborhoodName}"`);
+          effectiveName = match;
+        }
+      }
+    } catch (e) {
+      console.warn(`[311] discovery failed: ${e.message}`);
+    }
+  }
+
+  const nbhdFilter = encodeURIComponent(`neighborhood='${effectiveName.replace(/'/g, "''")}'`);
   const ENDPOINTS = [
     {
       url:      `https://data.kcmo.org/resource/7at3-sxhp.json?$where=${nbhdFilter}&$limit=100&$order=creation_date+DESC`,
@@ -413,7 +440,7 @@ async function fetch311Data(pool, neighborhoodName) {
   for (const endpoint of ENDPOINTS) {
     try {
       console.log(`[311] trying ${endpoint.url}`);
-      const res = await fetch(endpoint.url, { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(endpoint.url, { headers: kcmoHeaders, signal: AbortSignal.timeout(10000) });
       console.log(`[311] status=${res.status}`);
       if (!res.ok) {
         const errBody = await res.text();
