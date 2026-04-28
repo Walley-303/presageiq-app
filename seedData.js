@@ -1,5 +1,8 @@
 // seedData.js — One-time and periodic data loading for PresageIQ reference tables
 
+const fs   = require('fs');
+const path = require('path');
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function extractCoords(geom) {
@@ -63,28 +66,16 @@ const kcmoHeaders = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
-  const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON&format=geojson';
-  console.log(`[seed] fetching neighborhood boundaries from GeoJSON export endpoint`);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  const geoRes = await fetch(geoUrl, { headers: kcmoHeaders, signal: controller.signal });
-  clearTimeout(timeout);
-  console.log(`[seed] GeoJSON status=${geoRes.status}`);
-  if (!geoRes.ok) {
-    const errBody = await geoRes.text();
-    throw new Error(`GeoJSON endpoint failed: ${geoRes.status} — ${errBody.substring(0, 200)}`);
-  }
-
-  const text = await geoRes.text();
-  console.log('[seed] GeoJSON response length:', text.length, 'chars');
+  const filePath = path.join(__dirname, 'kc_neighborhoods.geojson');
+  const text = fs.readFileSync(filePath, 'utf8');
+  console.log('[seed] GeoJSON file length:', text.length, 'chars');
   const geojson = JSON.parse(text);
-  const features = geojson.features || [];
-  console.log(`[seed] GeoJSON returned ${features.length} features`);
-  if (features.length === 0) throw new Error('GeoJSON endpoint returned 0 features');
-
   console.log('[seed] first feature properties:', JSON.stringify(Object.keys(geojson.features[0].properties)));
   console.log('[seed] first feature property values:', JSON.stringify(geojson.features[0].properties));
+
+  const features = geojson.features || [];
+  console.log(`[seed] GeoJSON file contains ${features.length} features`);
+  if (features.length === 0) throw new Error('GeoJSON file contains 0 features');
 
   let count = 0;
   for (const feature of features) {
