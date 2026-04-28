@@ -1017,33 +1017,19 @@ function makeCollectors(pool) {
 }
 
 // ── fetchPropertyIntel — Jackson County ArcGIS Assessor Analysis ──────────────
-async function fetchPropertyIntel(pool, neighborhoodName, bbox) {
+async function fetchPropertyIntel(pool, neighborhoodName, zip) {
   const BASE = 'https://jcgis.jacksongov.org/arcgis/rest/services/AssessorAnalysis/Assessor_Neighborhood_and_Region_Analysis/MapServer/5/query';
-  const FIELDS = 'Parcel_ID,owner,SitusAddress,SitusCity,SitusState,SitusZipCode,AssessedValue,MarketValue,AssessedLand,AssessedImprovement,exempt,neighborhoodcode,pcacode,ComplexName';
+  const FIELDS = 'Parcel_ID,owner,SitusAddress,SitusCity,SitusState,SitusZipCode,AssessedValue,MarketValue,AssessedLand,AssessedImprovement,exempt,neighborhoodcode,pcacode';
 
   try {
-    // bbox = { north, south, east, west } in WGS84; inSR=4326 lets ArcGIS convert
-    const envelope = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
-    const params = `geometry=${encodeURIComponent(envelope)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326&outFields=${FIELDS}&returnGeometry=false&f=json&resultRecordCount=500`;
-    const url = `${BASE}?${params}`;
+    console.log(`[property] querying ZIP ${zip} for ${neighborhoodName}`);
+    const url = `${BASE}?where=${encodeURIComponent(`SitusZipCode='${zip}'`)}&outFields=${FIELDS}&returnGeometry=false&resultRecordCount=500&f=json`;
 
     const res = await fetch(url);
     const data = await res.json();
 
     if (!data.features || data.features.length === 0) {
-      console.log(`[property] No parcels found for ${neighborhoodName} — running field discovery`);
-      const discoverUrl = `${BASE}?geometry=${encodeURIComponent(envelope)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326&outFields=*&returnGeometry=false&f=json&resultRecordCount=3`;
-      try {
-        const dRes = await fetch(discoverUrl);
-        const dData = await dRes.json();
-        if (dData.features && dData.features.length > 0) {
-          console.log(`[property] available fields: ${Object.keys(dData.features[0].attributes).join(', ')}`);
-        } else {
-          console.log('[property] discovery returned 0 features — bbox may not intersect parcels');
-        }
-      } catch (de) {
-        console.warn(`[property] discovery failed: ${de.message}`);
-      }
+      console.log(`[property] No parcels found for ZIP ${zip} (${neighborhoodName})`);
       return null;
     }
 

@@ -886,25 +886,6 @@ app.post('/api/civiciq/report', async (req, res) => {
       if (fb) { resolvedLat = fb.lat; resolvedLng = fb.lng; }
     }
 
-    // ── Resolve neighborhood bbox for property intel ───────────────────────────
-    let bbox = null;
-    try {
-      const nbhRow = await pool.query(
-        `SELECT bbox_north AS north, bbox_south AS south, bbox_east AS east, bbox_west AS west
-         FROM kc_neighborhoods
-         WHERE LOWER(name) = LOWER($1)
-            OR LOWER(name) LIKE LOWER($2)
-            OR LOWER($1) LIKE '%' || LOWER(name) || '%'
-         LIMIT 1`,
-        [neighborhood, `%${neighborhood}%`]
-      );
-      bbox = nbhRow.rows[0] || null;
-    } catch (e) { /* continue */ }
-    if (!bbox && BBOX_FALLBACKS[neighborhood]) {
-      console.log(`[property] using bbox fallback for ${neighborhood}`);
-      bbox = BBOX_FALLBACKS[neighborhood];
-    }
-
     // ── 1. Parallel data collection ───────────────────────────────────────────
     const ejStateFips = zip
       ? ((parseInt(zip.substring(0, 2)) >= 66 && parseInt(zip.substring(0, 2)) <= 67) ? '20' : '29')
@@ -924,7 +905,7 @@ app.post('/api/civiciq/report', async (req, res) => {
       fetchNeighborhoodBusinesses(pool, neighborhood).catch(() => ({ businesses: [], totalCount: 0, source: 'google_places' })),
       fetch311Data(pool, neighborhood).catch(() => ({ totalRequests: 0, topCategories: [], abandonedProperty: 0, streetIssues: 0, codeViolations: 0 })),
       fetchNeighborhoodSentiment(neighborhood).catch(() => ({ posts: [], overallSentiment: 'neutral', signalCount: 0 })),
-      bbox ? fetchPropertyIntel(pool, neighborhood, bbox).catch(() => null) : Promise.resolve(null),
+      zip ? fetchPropertyIntel(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
     ]);
 
     const holcData = getHolcData(neighborhood);
