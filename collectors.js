@@ -1016,4 +1016,77 @@ function makeCollectors(pool) {
   return { collectReddit, collectGdelt, collectKcOpenData, collectCensus, collectFoursquare };
 }
 
-module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment };
+// ── fetchPropertyIntel — Jackson County ArcGIS Assessment Parcels ─────────────
+async function fetchPropertyIntel(pool, neighborhoodName, bbox) {
+  try {
+    // bbox = { north, south, east, west } from kc_neighborhoods table
+    const envelope = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+    const url = `https://jcgis.jacksongov.org/arcgis/rest/services/Assessment/AssessmentParcels/MapServer/0/query?geometry=${encodeURIComponent(envelope)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&outFields=PARCEL_ID,SITE_ADDR,OWNER_NAME,OWNER_ADDR,OWNER_STATE,ASSESSED_VAL,MARKET_VAL,PROP_CLASS,DELINQUENT,VACANCY,LAST_SALE_DT,LAST_SALE_PRC&returnGeometry=false&f=json&resultRecordCount=500`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.features || data.features.length === 0) {
+      console.log(`[property] No parcels found for ${neighborhoodName}`);
+      return null;
+    }
+
+    console.log(`[property] ${data.features.length} parcels found for ${neighborhoodName}`);
+
+    if (data.features[0]) {
+      console.log('[property] field names:', Object.keys(data.features[0].attributes).join(', '));
+    }
+
+    const parcels = data.features.map(f => f.attributes);
+    const totalParcels = parcels.length;
+    const delinquent = parcels.filter(p => p.DELINQUENT === 'Y' || p.DELINQUENT === true || p.DELINQUENT === 1).length;
+    const vacant = parcels.filter(p => p.VACANCY === 'Y' || p.VACANCY === true || p.VACANCY === 1).length;
+    const outOfState = parcels.filter(p => p.OWNER_STATE && p.OWNER_STATE !== 'MO' && p.OWNER_STATE !== 'KS').length;
+    const llcOwned = parcels.filter(p => p.OWNER_NAME && /LLC|INC|CORP|TRUST|LP\b/i.test(p.OWNER_NAME)).length;
+    const avgAssessed = parcels.reduce((s, p) => s + (parseFloat(p.ASSESSED_VAL) || 0), 0) / totalParcels;
+    const avgMarket = parcels.reduce((s, p) => s + (parseFloat(p.MARKET_VAL) || 0), 0) / totalParcels;
+
+    for (const p of parcels.slice(0, 200)) {
+      await pool.query(`
+        INSERT INTO property_intel (neighborhood, parcel_id, address, owner_name, owner_address, owner_state, assessed_value, market_value, property_class, tax_delinquent, vacancy_flag, last_sale_date, last_sale_price, fetched_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        ON CONFLICT DO NOTHING
+      `, [
+        neighborhoodName,
+        p.PARCEL_ID || null,
+        p.SITE_ADDR || null,
+        p.OWNER_NAME || null,
+        p.OWNER_ADDR || null,
+        p.OWNER_STATE || null,
+        parseFloat(p.ASSESSED_VAL) || null,
+        parseFloat(p.MARKET_VAL) || null,
+        p.PROP_CLASS || null,
+        p.DELINQUENT === 'Y' || p.DELINQUENT === true || p.DELINQUENT === 1,
+        p.VACANCY === 'Y' || p.VACANCY === true || p.VACANCY === 1,
+        p.LAST_SALE_DT || null,
+        parseFloat(p.LAST_SALE_PRC) || null,
+      ]);
+    }
+
+    return {
+      neighborhood: neighborhoodName,
+      totalParcels,
+      delinquentCount: delinquent,
+      delinquentPct: ((delinquent / totalParcels) * 100).toFixed(1),
+      vacantCount: vacant,
+      vacantPct: ((vacant / totalParcels) * 100).toFixed(1),
+      outOfStateOwners: outOfState,
+      outOfStatePct: ((outOfState / totalParcels) * 100).toFixed(1),
+      llcOwnedCount: llcOwned,
+      llcOwnedPct: ((llcOwned / totalParcels) * 100).toFixed(1),
+      avgAssessedValue: Math.round(avgAssessed),
+      avgMarketValue: Math.round(avgMarket),
+      dataSource: 'Jackson County ArcGIS Assessment Parcels',
+    };
+  } catch(e) {
+    console.error('[property] failed:', e.message);
+    return null;
+  }
+}
+
+module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyIntel };

@@ -2,7 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
-const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment } = require('./collectors');
+const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyIntel } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
 const { DATA_SOURCES, getHolcData } = require('./dataSources');
@@ -251,6 +251,27 @@ async function initDb() {
       fetched_at   TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS property_intel (
+      id SERIAL PRIMARY KEY,
+      neighborhood TEXT NOT NULL,
+      parcel_id TEXT,
+      address TEXT,
+      owner_name TEXT,
+      owner_address TEXT,
+      owner_state TEXT,
+      assessed_value FLOAT,
+      market_value FLOAT,
+      property_class TEXT,
+      tax_delinquent BOOLEAN DEFAULT FALSE,
+      vacancy_flag BOOLEAN DEFAULT FALSE,
+      last_sale_date TEXT,
+      last_sale_price FLOAT,
+      fetched_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_property_intel_neighborhood ON property_intel(neighborhood)`);
 
   console.log('Database ready.');
 }
@@ -856,11 +877,21 @@ app.post('/api/civiciq/report', async (req, res) => {
       if (fb) { resolvedLat = fb.lat; resolvedLng = fb.lng; }
     }
 
+    // ── Resolve neighborhood bbox for property intel ───────────────────────────
+    let bbox = null;
+    try {
+      const nbhRow = await pool.query(
+        'SELECT bbox_north AS north, bbox_south AS south, bbox_east AS east, bbox_west AS west FROM kc_neighborhoods WHERE LOWER(name) = LOWER($1)',
+        [neighborhood]
+      );
+      bbox = nbhRow.rows[0] || null;
+    } catch (e) { /* continue */ }
+
     // ── 1. Parallel data collection ───────────────────────────────────────────
     const ejStateFips = zip
       ? ((parseInt(zip.substring(0, 2)) >= 66 && parseInt(zip.substring(0, 2)) <= 67) ? '20' : '29')
       : null;
-    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData] = await Promise.all([
+    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData, propertyData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
       (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng, zip, ejStateFips).catch(() => null) : Promise.resolve(null),
@@ -875,6 +906,7 @@ app.post('/api/civiciq/report', async (req, res) => {
       fetchNeighborhoodBusinesses(pool, neighborhood).catch(() => ({ businesses: [], totalCount: 0, source: 'google_places' })),
       fetch311Data(pool, neighborhood).catch(() => ({ totalRequests: 0, topCategories: [], abandonedProperty: 0, streetIssues: 0, codeViolations: 0 })),
       fetchNeighborhoodSentiment(neighborhood).catch(() => ({ posts: [], overallSentiment: 'neutral', signalCount: 0 })),
+      bbox ? fetchPropertyIntel(pool, neighborhood, bbox).catch(() => null) : Promise.resolve(null),
     ]);
 
     const holcData = getHolcData(neighborhood);
@@ -968,6 +1000,9 @@ ${data311Context}
 COMMUNITY SENTIMENT:
 ${sentimentContext}
 
+PROPERTY LANDSCAPE:
+${propertyData ? JSON.stringify(propertyData) : 'Property data not available'}
+
 ---
 
 Output ONLY a valid JSON object with exactly these 7 keys. Each value is a string of 3-5 sentences:
@@ -1022,6 +1057,7 @@ SECTION GUIDANCE:
         businesses:         businessData,
         data_311:           data311,
         sentiment:          sentimentData,
+        property_intel:     propertyData,
         community_mentions: communityMentions.length,
         coords: (resolvedLat && resolvedLng) ? { lat: resolvedLat, lng: resolvedLng } : null,
       },

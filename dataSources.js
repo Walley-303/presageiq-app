@@ -149,6 +149,14 @@ const DATA_SOURCES = [
     how_used: 'Fetched and upserted into kc_311_requests when a CivicIQ report is generated for a neighborhood with fewer than 10 records in the last 90 days. Aggregated by category and injected into the AI synthesis prompt for the policy_implications and market_gap_assessment sections.',
   },
   {
+    id: 'jc_parcels',
+    name: 'Jackson County Assessment Parcels (ArcGIS REST API)',
+    url: 'https://jcgis.jacksongov.org/arcgis/rest/services/Assessment/AssessmentParcels/MapServer/0',
+    description: 'Parcel-level property data for Jackson County MO including owner name, owner state, assessed value, market value, property class, tax delinquency status, vacancy flag, and last sale data. Covers all residential and commercial parcels within KC neighborhoods.',
+    update_frequency: 'On-demand per neighborhood (fetched at CivicIQ report time)',
+    how_used: 'Feeds the Property & Ownership section of CivicIQ reports. Used to identify tax delinquency patterns, out-of-state and corporate ownership concentration, vacancy rates, and assessed-to-market value gaps as indicators of speculative disinvestment or neighborhood disinvestment.',
+  },
+  {
     id: 'opportunity_atlas',
     name: 'Opportunity Atlas — Opportunity Insights (Harvard)',
     url: 'https://opportunityinsights.org/data/',
