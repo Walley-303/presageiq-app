@@ -66,22 +66,25 @@ async function seedNeighborhoods(pool) {
   const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON&format=geojson';
   console.log(`[seed] fetching neighborhood boundaries from GeoJSON export endpoint`);
 
-  const geoRes = await fetch(geoUrl, { headers: kcmoHeaders });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  const geoRes = await fetch(geoUrl, { headers: kcmoHeaders, signal: controller.signal });
+  clearTimeout(timeout);
   console.log(`[seed] GeoJSON status=${geoRes.status}`);
   if (!geoRes.ok) {
     const errBody = await geoRes.text();
     throw new Error(`GeoJSON endpoint failed: ${geoRes.status} — ${errBody.substring(0, 200)}`);
   }
 
-  const geoData = await geoRes.json();
-  const features = geoData.features || [];
+  const text = await geoRes.text();
+  console.log('[seed] GeoJSON response length:', text.length, 'chars');
+  const geojson = JSON.parse(text);
+  const features = geojson.features || [];
   console.log(`[seed] GeoJSON returned ${features.length} features`);
   if (features.length === 0) throw new Error('GeoJSON endpoint returned 0 features');
 
-  // Log first feature schema so we can confirm actual field names
-  const first = features[0];
-  console.log(`[seed] first feature properties keys: ${Object.keys(first.properties || {}).join(', ')}`);
-  console.log(`[seed] first feature geometry type: ${first.geometry?.type}`);
+  console.log('[seed] first feature properties:', JSON.stringify(Object.keys(geojson.features[0].properties)));
+  console.log('[seed] first feature property values:', JSON.stringify(geojson.features[0].properties));
 
   let count = 0;
   for (const feature of features) {
