@@ -1027,7 +1027,19 @@ async function fetchPropertyIntel(pool, neighborhoodName, bbox) {
     const data = await res.json();
 
     if (!data.features || data.features.length === 0) {
-      console.log(`[property] No parcels found for ${neighborhoodName}`);
+      console.log(`[property] No parcels found for ${neighborhoodName} — running field discovery`);
+      const discoverUrl = `https://jcgis.jacksongov.org/arcgis/rest/services/Assessment/AssessmentParcels/MapServer/0/query?geometry=${encodeURIComponent(envelope)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json&resultRecordCount=3`;
+      try {
+        const dRes = await fetch(discoverUrl);
+        const dData = await dRes.json();
+        if (dData.features && dData.features.length > 0) {
+          console.log(`[property] available fields: ${Object.keys(dData.features[0].attributes).join(', ')}`);
+        } else {
+          console.log('[property] discovery returned 0 features — bbox may not intersect parcels');
+        }
+      } catch (de) {
+        console.warn(`[property] discovery failed: ${de.message}`);
+      }
       return null;
     }
 

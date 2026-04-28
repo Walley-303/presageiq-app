@@ -844,6 +844,15 @@ const CIVICIQ_COORD_FALLBACKS = {
   'Crossroads':      { lat: 39.0800, lng: -94.5800 },
 };
 
+const BBOX_FALLBACKS = {
+  'Troost Corridor': { north: 39.0650, south: 39.0200, east: -94.5550, west: -94.5850 },
+  'East Side':       { north: 39.1100, south: 39.0600, east: -94.5000, west: -94.5500 },
+  'Westside':        { north: 39.1100, south: 39.0800, east: -94.5700, west: -94.6000 },
+  '18th and Vine':   { north: 39.0950, south: 39.0750, east: -94.5500, west: -94.5800 },
+  'Crossroads':      { north: 39.0900, south: 39.0700, east: -94.5650, west: -94.5900 },
+  'Downtown KC':     { north: 39.1050, south: 39.0850, east: -94.5600, west: -94.5900 },
+};
+
 // ── CivicIQ neighborhood intelligence report ──────────────────────────────────
 app.post('/api/civiciq/report', async (req, res) => {
   const { neighborhood, zip: zipParam, lat: latParam, lng: lngParam } = req.body;
@@ -881,11 +890,20 @@ app.post('/api/civiciq/report', async (req, res) => {
     let bbox = null;
     try {
       const nbhRow = await pool.query(
-        'SELECT bbox_north AS north, bbox_south AS south, bbox_east AS east, bbox_west AS west FROM kc_neighborhoods WHERE LOWER(name) = LOWER($1)',
-        [neighborhood]
+        `SELECT bbox_north AS north, bbox_south AS south, bbox_east AS east, bbox_west AS west
+         FROM kc_neighborhoods
+         WHERE LOWER(name) = LOWER($1)
+            OR LOWER(name) LIKE LOWER($2)
+            OR LOWER($1) LIKE '%' || LOWER(name) || '%'
+         LIMIT 1`,
+        [neighborhood, `%${neighborhood}%`]
       );
       bbox = nbhRow.rows[0] || null;
     } catch (e) { /* continue */ }
+    if (!bbox && BBOX_FALLBACKS[neighborhood]) {
+      console.log(`[property] using bbox fallback for ${neighborhood}`);
+      bbox = BBOX_FALLBACKS[neighborhood];
+    }
 
     // ── 1. Parallel data collection ───────────────────────────────────────────
     const ejStateFips = zip
