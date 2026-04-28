@@ -1016,76 +1016,114 @@ function makeCollectors(pool) {
   return { collectReddit, collectGdelt, collectKcOpenData, collectCensus, collectFoursquare };
 }
 
-// ── fetchPropertyIntel — Jackson County ArcGIS Assessor Analysis ──────────────
-async function fetchPropertyIntel(pool, neighborhoodName, zip) {
-  const BASE = 'https://jcgis.jacksongov.org/arcgis/rest/services/AssessorAnalysis/Assessor_Neighborhood_and_Region_Analysis/MapServer/5/query';
-  const FIELDS = 'Parcel_ID,owner,SitusAddress,SitusCity,SitusState,SitusZipCode,AssessedValue,MarketValue,AssessedLand,AssessedImprovement,exempt,neighborhoodcode,pcacode';
-
+// ── fetchPropertyViolations — KCMO Property Violations (fmCK-dg4k) ────────────
+async function fetchPropertyViolations(pool, neighborhoodName, zip) {
   try {
-    console.log(`[property] querying ZIP ${zip} for ${neighborhoodName}`);
-    const url = `${BASE}?where=${encodeURIComponent(`SitusZipCode='${zip}'`)}&outFields=${FIELDS}&returnGeometry=false&resultRecordCount=500&f=json`;
+    const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
 
-    const res = await fetch(url);
-    const data = await res.json();
+    // KCMO Property Violations dataset: fmCK-dg4k
+    const url = `https://data.kcmo.org/resource/fmCK-dg4k.json?$where=zip_code='${zip}'&$limit=500&$order=violation_date+DESC`;
+    console.log(`[violations] querying ZIP ${zip} for ${neighborhoodName}`);
 
-    if (!data.features || data.features.length === 0) {
-      console.log(`[property] No parcels found for ZIP ${zip} (${neighborhoodName})`);
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      console.error(`[violations] status=${res.status}`);
       return null;
     }
 
-    console.log(`[property] ${data.features.length} parcels found for ${neighborhoodName}`);
-    if (data.features[0]) {
-      console.log('[property] field names:', Object.keys(data.features[0].attributes).join(', '));
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      console.log(`[violations] no records for ZIP ${zip}`);
+      return null;
     }
 
-    const parcels = data.features.map(f => f.attributes);
-    const totalParcels = parcels.length;
-    const taxExempt = parcels.filter(p => p.exempt === 'true' || p.exempt === '1' || p.exempt === true).length;
-    const outOfState = parcels.filter(p => p.SitusState && p.SitusState !== 'MO' && p.SitusState !== 'KS').length;
-    const llcOwned  = parcels.filter(p => p.owner && /LLC|INC|CORP|TRUST|LP\b/i.test(p.owner)).length;
-    const avgAssessed = parcels.reduce((s, p) => s + (parseFloat(p.AssessedValue) || 0), 0) / totalParcels;
-    const avgMarket   = parcels.reduce((s, p) => s + (parseFloat(p.MarketValue)   || 0), 0) / totalParcels;
+    console.log(`[violations] ${data.length} records for ZIP ${zip}`);
+    if (data[0]) console.log('[violations] field names:', Object.keys(data[0]).join(', '));
 
-    for (const p of parcels.slice(0, 200)) {
-      const ownerAddr = [p.SitusCity, p.SitusState, p.SitusZipCode].filter(Boolean).join(', ');
-      await pool.query(`
-        INSERT INTO property_intel (neighborhood, parcel_id, address, owner_name, owner_address, owner_state, assessed_value, market_value, property_class, tax_delinquent, vacancy_flag, last_sale_date, last_sale_price, fetched_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
-        ON CONFLICT DO NOTHING
-      `, [
-        neighborhoodName,
-        p.Parcel_ID     || null,
-        p.SitusAddress  || null,
-        p.owner         || null,
-        ownerAddr       || null,
-        p.SitusState    || null,
-        parseFloat(p.AssessedValue) || null,
-        parseFloat(p.MarketValue)   || null,
-        p.pcacode       || null,
-        p.exempt === 'true' || p.exempt === '1' || p.exempt === true,
-        false,
-        null,
-        null,
-      ]);
+    const typeCounts = {};
+    let openCount = 0;
+    let closedCount = 0;
+
+    for (const v of data) {
+      const type = v.violation_description || v.violation_type || v.category || 'Unknown';
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+      if (v.status && v.status.toLowerCase().includes('open')) openCount++;
+      else closedCount++;
     }
+
+    const topTypes = Object.entries(typeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([type, count]) => ({ type, count }));
 
     return {
       neighborhood: neighborhoodName,
-      totalParcels,
-      taxExemptCount: taxExempt,
-      taxExemptPct:   ((taxExempt  / totalParcels) * 100).toFixed(1),
-      outOfStateOwners: outOfState,
-      outOfStatePct:    ((outOfState / totalParcels) * 100).toFixed(1),
-      llcOwnedCount: llcOwned,
-      llcOwnedPct:   ((llcOwned   / totalParcels) * 100).toFixed(1),
-      avgAssessedValue: Math.round(avgAssessed),
-      avgMarketValue:   Math.round(avgMarket),
-      dataSource: 'Jackson County ArcGIS Assessor Analysis',
+      totalViolations: data.length,
+      openViolations: openCount,
+      closedViolations: closedCount,
+      topViolationTypes: topTypes,
+      dataSource: 'KCMO Open Data — Property Violations',
     };
   } catch(e) {
-    console.error('[property] failed:', e.message);
+    console.error('[violations] failed:', e.message);
     return null;
   }
 }
 
-module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyIntel };
+// ── fetchBuildingPermits — KCMO Building Permits (ha5f-h3t6) ─────────────────
+async function fetchBuildingPermits(pool, neighborhoodName, zip) {
+  try {
+    const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
+
+    // KCMO Building Permits dataset: ha5f-h3t6
+    const url = `https://data.kcmo.org/resource/ha5f-h3t6.json?$where=zip_code='${zip}'&$limit=500&$order=issued_date+DESC`;
+    console.log(`[permits] querying ZIP ${zip} for ${neighborhoodName}`);
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      console.error(`[permits] status=${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      console.log(`[permits] no records for ZIP ${zip}`);
+      return null;
+    }
+
+    console.log(`[permits] ${data.length} records for ZIP ${zip}`);
+    if (data[0]) console.log('[permits] field names:', Object.keys(data[0]).join(', '));
+
+    const typeCounts = {};
+    let totalValue = 0;
+    let recentCount = 0;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    for (const p of data) {
+      const type = p.permit_type || p.work_description || p.category || 'Unknown';
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+      totalValue += parseFloat(p.declared_valuation || p.value || 0);
+      if (p.issued_date && new Date(p.issued_date) > oneYearAgo) recentCount++;
+    }
+
+    const topTypes = Object.entries(typeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([type, count]) => ({ type, count }));
+
+    return {
+      neighborhood: neighborhoodName,
+      totalPermits: data.length,
+      recentPermits: recentCount,
+      totalDeclaredValue: Math.round(totalValue),
+      topPermitTypes: topTypes,
+      dataSource: 'KCMO Open Data — Building Permits',
+    };
+  } catch(e) {
+    console.error('[permits] failed:', e.message);
+    return null;
+  }
+}
+
+module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchBuildingPermits };

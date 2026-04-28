@@ -530,7 +530,8 @@
         <div class="source-item"><div class="source-dot"></div><span>Reddit — r/kansascity, r/KCFoodScene, r/kansascitylocal (neighborhood sentiment, last 12 months)</span></div>
         <div class="source-item"><div class="source-dot"></div><span>PresageIQ Community Intelligence Database — GDELT, KC media (last 90 days)</span></div>
         <div class="source-item"><div class="source-dot"></div><span>Opportunity Atlas / Opportunity Insights (Harvard) — Census-tract economic mobility metrics</span></div>
-        <div class="source-item"><div class="source-dot"></div><span>Jackson County Assessment Parcels (ArcGIS REST API) — Parcel-level ownership, tax delinquency, and vacancy data</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>KCMO Open Data — Property Violations (fmCK-dg4k) — Code enforcement violations by ZIP code</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>KCMO Open Data — Building Permits (ha5f-h3t6) — Issued permits by ZIP code with declared valuation</span></div>
       </div>
     </div>
 
@@ -607,8 +608,8 @@
     if (d.data_311?.topCategories?.length) {
       facts.push({ label: 'Top 311 Issue', value: d.data_311.topCategories[0].category, sub: `${d.data_311.topCategories[0].count} requests (90 days)` });
     }
-    if (d.property_intel?.delinquentPct != null) {
-      facts.push({ label: 'Tax Delinquency', value: `${d.property_intel.delinquentPct}%`, sub: 'of parcels (Jackson County)' });
+    if (d.violations?.openViolations != null) {
+      facts.push({ label: 'Open Violations', value: String(d.violations.openViolations), sub: 'Active property violations (KCMO)' });
     }
     if (d.sentiment?.overallSentiment) {
       facts.push({ label: 'Community Sentiment', value: d.sentiment.overallSentiment, sub: `Multi-Platform · ${d.sentiment.signalCount || d.sentiment.totalCount || 0} signals` });
@@ -626,39 +627,41 @@
     const holcInfo = d.holc;
 
     function renderPropertySection() {
-      const p = d.property_intel;
-      if (!p) {
+      const v = d.violations;
+      const p = d.permits;
+      if (!v && !p) {
         return `
           <div class="section-card">
             <div class="section-head">
               <div class="section-icon">◰</div>
               <div class="section-title">Property &amp; Ownership</div>
             </div>
-            <div class="section-body" style="color:var(--muted)">Property data not available — neighborhood boundary not found in Jackson County dataset.</div>
+            <div class="section-body" style="color:var(--muted)">Property data not available — ZIP code required.</div>
           </div>`;
       }
+      const violationsBlock = v ? `
+        <div class="activity-block">
+          <div class="activity-block-label">Property Violations (KCMO Open Data)</div>
+          <div class="activity-cat-row"><span>Total violations</span><span class="activity-count">${esc(String(v.totalViolations))}</span></div>
+          <div class="activity-cat-row"><span>Open violations</span><span class="activity-count" style="color:${v.openViolations > 0 ? 'var(--danger)' : 'var(--muted)'}">${esc(String(v.openViolations))}</span></div>
+          <div class="activity-cat-row"><span>Closed violations</span><span class="activity-count">${esc(String(v.closedViolations))}</span></div>
+          ${(v.topViolationTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
+        </div>` : '';
+      const permitsBlock = p ? `
+        <div class="activity-block">
+          <div class="activity-block-label">Building Permits (KCMO Open Data)</div>
+          <div class="activity-cat-row"><span>Total permits</span><span class="activity-count">${esc(String(p.totalPermits))}</span></div>
+          <div class="activity-cat-row"><span>Permits last 12 months</span><span class="activity-count">${esc(String(p.recentPermits))}</span></div>
+          <div class="activity-cat-row"><span>Total declared value</span><span class="activity-count">$${esc(Number(p.totalDeclaredValue).toLocaleString())}</span></div>
+          ${(p.topPermitTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
+        </div>` : '';
       return `
         <div class="section-card">
           <div class="section-head">
             <div class="section-icon">◰</div>
             <div class="section-title">Property &amp; Ownership</div>
           </div>
-          <div class="section-body activity-body">
-            <div class="activity-block">
-              <div class="activity-block-label">Parcel Analysis (Jackson County ArcGIS)</div>
-              <div class="activity-cat-row"><span>Total parcels analyzed</span><span class="activity-count">${esc(String(p.totalParcels?.toLocaleString() ?? '—'))}</span></div>
-              <div class="activity-cat-row"><span>Tax delinquency rate</span><span class="activity-count" style="color:${parseFloat(p.delinquentPct) > 5 ? 'var(--danger)' : 'var(--muted)'}">${esc(p.delinquentPct)}%</span></div>
-              <div class="activity-cat-row"><span>Vacancy rate</span><span class="activity-count">${esc(p.vacantPct)}%</span></div>
-              <div class="activity-cat-row"><span>Out-of-state ownership</span><span class="activity-count">${esc(p.outOfStatePct)}%</span></div>
-              <div class="activity-cat-row"><span>LLC / corporate ownership</span><span class="activity-count">${esc(p.llcOwnedPct)}%</span></div>
-              <div class="activity-cat-row"><span>Avg assessed value</span><span class="activity-count">$${esc(String(p.avgAssessedValue?.toLocaleString() ?? '—'))}</span></div>
-              <div class="activity-cat-row"><span>Avg market value</span><span class="activity-count">$${esc(String(p.avgMarketValue?.toLocaleString() ?? '—'))}</span></div>
-            </div>
-            <div class="activity-block">
-              <div class="activity-block-label">Disinvestment Signal</div>
-              <div class="activity-stat">High out-of-state or corporate ownership combined with tax delinquency is a documented indicator of speculative disinvestment.</div>
-            </div>
-          </div>
+          <div class="section-body activity-body">${violationsBlock}${permitsBlock}</div>
         </div>`;
     }
 

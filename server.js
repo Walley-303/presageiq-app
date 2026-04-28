@@ -2,7 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
-const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyIntel } = require('./collectors');
+const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchBuildingPermits } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
 const { DATA_SOURCES, getHolcData } = require('./dataSources');
@@ -253,25 +253,17 @@ async function initDb() {
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS property_intel (
+    CREATE TABLE IF NOT EXISTS kc_property_violations (
       id SERIAL PRIMARY KEY,
       neighborhood TEXT NOT NULL,
-      parcel_id TEXT,
-      address TEXT,
-      owner_name TEXT,
-      owner_address TEXT,
-      owner_state TEXT,
-      assessed_value FLOAT,
-      market_value FLOAT,
-      property_class TEXT,
-      tax_delinquent BOOLEAN DEFAULT FALSE,
-      vacancy_flag BOOLEAN DEFAULT FALSE,
-      last_sale_date TEXT,
-      last_sale_price FLOAT,
+      zip TEXT,
+      total_violations INTEGER,
+      open_violations INTEGER,
+      closed_violations INTEGER,
+      top_types JSONB,
       fetched_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_property_intel_neighborhood ON property_intel(neighborhood)`);
 
   console.log('Database ready.');
 }
@@ -844,15 +836,6 @@ const CIVICIQ_COORD_FALLBACKS = {
   'Crossroads':      { lat: 39.0800, lng: -94.5800 },
 };
 
-const BBOX_FALLBACKS = {
-  'Troost Corridor': { north: 39.0650, south: 39.0200, east: -94.5550, west: -94.5850 },
-  'East Side':       { north: 39.1100, south: 39.0600, east: -94.5000, west: -94.5500 },
-  'Westside':        { north: 39.1100, south: 39.0800, east: -94.5700, west: -94.6000 },
-  '18th and Vine':   { north: 39.0950, south: 39.0750, east: -94.5500, west: -94.5800 },
-  'Crossroads':      { north: 39.0900, south: 39.0700, east: -94.5650, west: -94.5900 },
-  'Downtown KC':     { north: 39.1050, south: 39.0850, east: -94.5600, west: -94.5900 },
-};
-
 // ── CivicIQ neighborhood intelligence report ──────────────────────────────────
 app.post('/api/civiciq/report', async (req, res) => {
   const { neighborhood, zip: zipParam, lat: latParam, lng: lngParam } = req.body;
@@ -890,7 +873,7 @@ app.post('/api/civiciq/report', async (req, res) => {
     const ejStateFips = zip
       ? ((parseInt(zip.substring(0, 2)) >= 66 && parseInt(zip.substring(0, 2)) <= 67) ? '20' : '29')
       : null;
-    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData, propertyData] = await Promise.all([
+    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData, violationsData, permitsData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
       (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng, zip, ejStateFips).catch(() => null) : Promise.resolve(null),
@@ -905,7 +888,8 @@ app.post('/api/civiciq/report', async (req, res) => {
       fetchNeighborhoodBusinesses(pool, neighborhood).catch(() => ({ businesses: [], totalCount: 0, source: 'google_places' })),
       fetch311Data(pool, neighborhood).catch(() => ({ totalRequests: 0, topCategories: [], abandonedProperty: 0, streetIssues: 0, codeViolations: 0 })),
       fetchNeighborhoodSentiment(neighborhood).catch(() => ({ posts: [], overallSentiment: 'neutral', signalCount: 0 })),
-      zip ? fetchPropertyIntel(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
+      zip ? fetchPropertyViolations(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
+      zip ? fetchBuildingPermits(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
     ]);
 
     const holcData = getHolcData(neighborhood);
@@ -999,8 +983,11 @@ ${data311Context}
 COMMUNITY SENTIMENT:
 ${sentimentContext}
 
-PROPERTY LANDSCAPE:
-${propertyData ? JSON.stringify(propertyData) : 'Property data not available'}
+PROPERTY VIOLATIONS:
+${violationsData ? JSON.stringify(violationsData) : 'Property violations data not available'}
+
+BUILDING PERMITS:
+${permitsData ? JSON.stringify(permitsData) : 'Building permits data not available'}
 
 ---
 
@@ -1056,7 +1043,8 @@ SECTION GUIDANCE:
         businesses:         businessData,
         data_311:           data311,
         sentiment:          sentimentData,
-        property_intel:     propertyData,
+        violations:         violationsData,
+        permits:            permitsData,
         community_mentions: communityMentions.length,
         coords: (resolvedLat && resolvedLng) ? { lat: resolvedLat, lng: resolvedLng } : null,
       },
