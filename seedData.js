@@ -63,85 +63,42 @@ const kcmoHeaders = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
 // ── seedNeighborhoods ─────────────────────────────────────────────────────────
 
 async function seedNeighborhoods(pool) {
-  // Step 1: Discover actual field names before bulk fetch
-  try {
-    const discoverRes = await fetch('https://data.kcmo.org/resource/q45j-ejyk.json?$limit=1', { headers: kcmoHeaders });
-    console.log(`[seed] neighborhood schema discovery status=${discoverRes.status}`);
-    if (discoverRes.ok) {
-      const discoverData = await discoverRes.json();
-      if (discoverData.length > 0) {
-        console.log(`[seed] neighborhood dataset field names: ${Object.keys(discoverData[0]).join(', ')}`);
-        console.log(`[seed] first record sample: ${JSON.stringify(discoverData[0]).substring(0, 300)}`);
-      } else {
-        console.warn('[seed] schema discovery returned 0 records');
-      }
-    }
-  } catch (e) {
-    console.warn(`[seed] schema discovery failed: ${e.message}`);
+  const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON';
+  console.log(`[seed] fetching neighborhood boundaries from GeoJSON export endpoint`);
+
+  const geoRes = await fetch(geoUrl, { headers: kcmoHeaders });
+  console.log(`[seed] GeoJSON status=${geoRes.status}`);
+  if (!geoRes.ok) {
+    const errBody = await geoRes.text();
+    throw new Error(`GeoJSON endpoint failed: ${geoRes.status} — ${errBody.substring(0, 200)}`);
   }
 
-  const primaryUrl = 'https://data.kcmo.org/resource/q45j-ejyk.json?$limit=300';
-  console.log(`[seed] fetching neighborhoods from ${primaryUrl}`);
-  let features = [];
+  const geoData = await geoRes.json();
+  const features = geoData.features || [];
+  console.log(`[seed] GeoJSON returned ${features.length} features`);
+  if (features.length === 0) throw new Error('GeoJSON endpoint returned 0 features');
 
-  const primaryRes = await fetch(primaryUrl, { headers: kcmoHeaders });
-  console.log(`[seed] neighborhoods primary status=${primaryRes.status}`);
-  const primaryBody = await primaryRes.text();
-  console.log(`[seed] neighborhoods primary body[0:200]: ${primaryBody.substring(0, 200)}`);
-
-  if (primaryRes.ok) {
-    try { features = JSON.parse(primaryBody); } catch (e) { console.warn(`[seed] neighborhoods JSON parse failed: ${e.message}`); }
-  }
-
-  if (!Array.isArray(features) || features.length === 0) {
-    const geoUrl = 'https://data.kcmo.org/api/geospatial/q45j-ejyk?method=export&type=GeoJSON';
-    console.log(`[seed] primary returned 0 records, trying GeoJSON: ${geoUrl}`);
-    try {
-      const geoRes = await fetch(geoUrl, { headers: kcmoHeaders });
-      console.log(`[seed] neighborhoods GeoJSON status=${geoRes.status}`);
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        features = geoData.features || [];
-        console.log(`[seed] GeoJSON endpoint returned ${features.length} features`);
-      }
-    } catch (e) {
-      console.warn(`[seed] GeoJSON fetch failed: ${e.message}`);
-    }
-  } else {
-    console.log(`[seed] primary endpoint returned ${features.length} records`);
-  }
-
-  if (!Array.isArray(features) || features.length === 0) {
-    throw new Error('Both neighborhood endpoints returned 0 records');
-  }
+  // Log first feature schema so we can confirm actual field names
+  const first = features[0];
+  console.log(`[seed] first feature properties keys: ${Object.keys(first.properties || {}).join(', ')}`);
+  console.log(`[seed] first feature geometry type: ${first.geometry?.type}`);
 
   let count = 0;
   for (const feature of features) {
-    // Handle both flat SODA JSON and GeoJSON Feature formats
-    const props = feature.properties || feature;
+    const props = feature.properties || {};
 
-    // Try all known field name variations; fall back to first plausible string field
-    const name = props.name
-      || props.neighborhood_name
-      || props.nbhd_name
-      || props.nhood
-      || props.nbhd
-      || props.nhood_name
-      || props.neighborhoodname
-      || props.nbhd_na
-      || props.label
-      || props.nbhd_label
-      || Object.entries(props).find(([k, v]) =>
-          !k.startsWith(':') && typeof v === 'string' && v.length > 2 && v.length < 80 && /^[A-Za-z]/.test(v)
-        )?.[1];
+    // Find name: first property key whose name contains "name" or "neighborhood" (case-insensitive)
+    const nameKey = Object.keys(props).find(k =>
+      /name|neighborhood/i.test(k) && typeof props[k] === 'string' && props[k].length > 1
+    );
+    const name = nameKey ? props[nameKey] : null;
 
     if (!name) {
-      console.warn(`[seed] no name field found — record keys: ${Object.keys(props).join(', ')}`);
+      console.warn(`[seed] no name field found — keys: ${Object.keys(props).join(', ')}`);
       continue;
     }
 
-    // Skip polygon parsing until field names are confirmed — centroid/bbox stay null
-    const geom = feature.geometry || feature.the_geom || props.the_geom || null;
+    const geom = feature.geometry || null;
     let polygon = null;
     let centroidLat = null, centroidLng = null;
     let bboxNorth = null, bboxSouth = null, bboxEast = null, bboxWest = null;
