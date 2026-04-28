@@ -81,11 +81,8 @@ async function seedNeighborhoods(pool) {
   for (const feature of features) {
     const props = feature.properties || {};
 
-    // Find name: first property key whose name contains "name" or "neighborhood" (case-insensitive)
-    const nameKey = Object.keys(props).find(k =>
-      /name|neighborhood/i.test(k) && typeof props[k] === 'string' && props[k].length > 1
-    );
-    const name = nameKey ? props[nameKey] : null;
+    const name = props.nbhname || props.NBHName || props.NBHNAME ||
+      Object.entries(props).find(([k, v]) => /name|neighborhood/i.test(k) && typeof v === 'string' && v.length > 1 && v.length < 80)?.[1];
 
     if (!name) {
       console.warn(`[seed] no name field found — keys: ${Object.keys(props).join(', ')}`);
