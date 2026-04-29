@@ -892,6 +892,8 @@ app.post('/api/civiciq/report', async (req, res) => {
       zip ? fetchRentalLLCOwners(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
     ]);
 
+    console.log('[civiciq] violationsData:', violationsData ? `${violationsData.totalViolations} violations` : 'null');
+    console.log('[civiciq] rentalLLCData:', rentalLLCData ? `${rentalLLCData.totalLLCs} LLCs` : 'null');
     const holcData = getHolcData(neighborhood);
     const communityMentions = communityRows.rows || [];
 

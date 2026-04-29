@@ -610,6 +610,8 @@
     }
     if (d.violations?.openViolations != null) {
       facts.push({ label: 'Open Violations', value: String(d.violations.openViolations), sub: 'Active property violations (KCMO)' });
+    } else if (d.rentalLLCs?.totalLLCs != null) {
+      facts.push({ label: 'Rental LLCs', value: String(d.rentalLLCs.totalLLCs), sub: 'LLC-owned rentals in ZIP' });
     }
     if (d.sentiment?.overallSentiment) {
       facts.push({ label: 'Community Sentiment', value: d.sentiment.overallSentiment, sub: `Multi-Platform · ${d.sentiment.signalCount || d.sentiment.totalCount || 0} signals` });
@@ -636,27 +638,26 @@
               <div class="section-icon">◰</div>
               <div class="section-title">Property &amp; Ownership</div>
             </div>
-            <div class="section-body" style="color:var(--muted)">Property data not available — ZIP code required.</div>
+            <div class="section-body" style="color:var(--muted)">Property data unavailable for this location.</div>
           </div>`;
       }
-      const violationsBlock = v ? `
-        <div class="activity-block">
-          <div class="activity-block-label">Property Violations (KCMO Open Data)</div>
-          <div class="activity-cat-row"><span>Total violations</span><span class="activity-count">${esc(String(v.totalViolations))}</span></div>
-          <div class="activity-cat-row"><span>Open violations</span><span class="activity-count" style="color:${v.openViolations > 0 ? 'var(--danger)' : 'var(--muted)'}">${esc(String(v.openViolations))}</span></div>
-          <div class="activity-cat-row"><span>Closed violations</span><span class="activity-count">${esc(String(v.closedViolations))}</span></div>
-          ${(v.topViolationTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
-        </div>` : '';
       const llcBlock = llc ? `
         <div class="activity-block">
-          <div class="activity-block-label">Rental LLC Owners (KCMO City Clerk)</div>
-          <div class="activity-cat-row"><span>LLC-owned rental properties in ZIP</span><span class="activity-count">${esc(String(llc.totalLLCs))}</span></div>
-          <div class="activity-cat-row"><span>Out-of-state LLC owners</span><span class="activity-count" style="color:${(llc.outOfStateCount || 0) > 0 ? 'var(--danger)' : 'var(--muted)'}">${esc(String(llc.outOfStateCount || 0))}</span></div>
+          <div class="activity-block-label">Rental LLC Ownership (KCMO City Clerk)</div>
+          <div class="activity-cat-row"><span>Total LLC-owned rental properties</span><span class="activity-count">${esc(String(llc.totalLLCs))}</span></div>
+          <div class="activity-cat-row"><span>Out-of-state owners</span><span class="activity-count" style="color:${(llc.outOfStateCount || 0) > 0 ? 'var(--danger)' : 'var(--muted)'}">${esc(String(llc.outOfStateCount || 0))}</span></div>
           ${(llc.topOwners || []).slice(0, 5).map(o => `
             <div class="activity-cat-row">
               <span>${esc(o.name || '')}</span>
               <span class="activity-count" style="font-size:11px">${esc(o.agent || '')}${o.state && o.state !== 'MO' ? ` · ${esc(o.state)}` : ''}</span>
             </div>`).join('')}
+        </div>` : '';
+      const violationsBlock = v ? `
+        <div class="activity-block">
+          <div class="activity-block-label">Property Violations (KCMO Open Data)</div>
+          <div class="activity-cat-row"><span>Total violations</span><span class="activity-count">${esc(String(v.totalViolations))}</span></div>
+          <div class="activity-cat-row"><span>Open violations</span><span class="activity-count" style="color:${(v.openViolations || 0) > 0 ? 'var(--danger)' : 'var(--muted)'}">${esc(String(v.openViolations || 0))}</span></div>
+          ${(v.topViolationTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
         </div>` : '';
       return `
         <div class="section-card">
@@ -664,7 +665,7 @@
             <div class="section-icon">◰</div>
             <div class="section-title">Property &amp; Ownership</div>
           </div>
-          <div class="section-body activity-body">${violationsBlock}${llcBlock}</div>
+          <div class="section-body activity-body">${llcBlock}${violationsBlock}</div>
         </div>`;
     }
 
