@@ -1020,14 +1020,15 @@ function makeCollectors(pool) {
 async function fetchPropertyViolations(pool, neighborhoodName, zip) {
   try {
     const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
-    // Both datasets use address/lat-lng not ZIP; pull 500 most recent and log fields
-    // for filter discovery. vq3e-m9ge = EnerGov current; tveh-zsv3 = 311-based open violations.
-    // No $order clause — vq3e-m9ge uses column names like case_status/casenumber, not open_date_time
+    // vq3e-m9ge confirmed fields: violationid, casenumber, case_status, street_address,
+    // postalcode, chapter, ordinance, description, vio_status, date_found, date_resolved, pin
     const DATASETS = ['vq3e-m9ge', 'tveh-zsv3'];
 
     let data = null;
     for (const dsId of DATASETS) {
-      const url = `https://data.kcmo.org/resource/${dsId}.json?$limit=500`;
+      const url = dsId === 'vq3e-m9ge'
+        ? `https://data.kcmo.org/resource/vq3e-m9ge.json?$where=postalcode='${zip}'&$limit=500`
+        : `https://data.kcmo.org/resource/${dsId}.json?$limit=500`;
       console.log(`[violations] trying dataset ${dsId} for ${neighborhoodName}`);
       try {
         const res = await fetch(url, { headers });
@@ -1055,11 +1056,9 @@ async function fetchPropertyViolations(pool, neighborhoodName, zip) {
     const typeCounts = {};
     let openCount = 0, closedCount = 0;
     for (const v of data) {
-      const type = v.violation_description || v.violation_type || v.code_section || v.category || 'Unknown';
+      const type = v.description || v.chapter || v.ordinance || 'Unknown';
       typeCounts[type] = (typeCounts[type] || 0) + 1;
-      // case_status is the confirmed column name in vq3e-m9ge
-      const status = (v.case_status || v.status || v.violation_status || '').toLowerCase();
-      if (status.includes('open') || status === 'active') openCount++;
+      if (v.vio_status && v.vio_status.toLowerCase().includes('open')) openCount++;
       else closedCount++;
     }
 
