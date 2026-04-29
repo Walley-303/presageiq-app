@@ -157,12 +157,12 @@ const DATA_SOURCES = [
     how_used: 'Feeds the Property & Ownership section of CivicIQ reports. Used to surface code enforcement activity, open violation counts, and top violation types as indicators of property condition and neighborhood disinvestment.',
   },
   {
-    id: 'kc_permits',
-    name: 'KCMO Open Data — Building Permits',
-    url: 'https://data.kcmo.org/resource/ha5f-h3t6.json',
-    description: 'Building permits issued by Kansas City, MO. Includes permit type, work description, declared valuation, and issue date. Queried by ZIP code for CivicIQ neighborhood reports.',
+    id: 'kc_llc_owners',
+    name: 'KCMO City Clerk — LLC Rental Affidavits',
+    url: 'https://data.kcmo.org/resource/6hy4-5b3m.json',
+    description: 'LLC affidavits filed with the Kansas City City Clerk identifying LLCs doing business as rental property owners. Includes LLC name, DBA, address, and applicant/agent name. Queried by ZIP code for CivicIQ neighborhood reports.',
     update_frequency: 'On-demand per neighborhood (fetched at CivicIQ report time)',
-    how_used: 'Feeds the Property & Ownership section of CivicIQ reports. Used to measure construction and renovation activity, recent permit counts, and total declared investment value as indicators of neighborhood reinvestment.',
+    how_used: 'Feeds the Property & Ownership section of CivicIQ reports. Used to surface LLC rental ownership concentration by neighborhood, revealing corporate landlord presence and absentee ownership patterns.',
   },
   {
     id: 'opportunity_atlas',

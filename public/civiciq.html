@@ -530,8 +530,8 @@
         <div class="source-item"><div class="source-dot"></div><span>Reddit — r/kansascity, r/KCFoodScene, r/kansascitylocal (neighborhood sentiment, last 12 months)</span></div>
         <div class="source-item"><div class="source-dot"></div><span>PresageIQ Community Intelligence Database — GDELT, KC media (last 90 days)</span></div>
         <div class="source-item"><div class="source-dot"></div><span>Opportunity Atlas / Opportunity Insights (Harvard) — Census-tract economic mobility metrics</span></div>
-        <div class="source-item"><div class="source-dot"></div><span>KCMO Open Data — Property Violations (fmCK-dg4k) — Code enforcement violations by ZIP code</span></div>
-        <div class="source-item"><div class="source-dot"></div><span>KCMO Open Data — Building Permits (ha5f-h3t6) — Issued permits by ZIP code with declared valuation</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>KCMO Open Data — Property Violations (vq3e-m9ge / tveh-zsv3) — EnerGov code enforcement and open violations</span></div>
+        <div class="source-item"><div class="source-dot"></div><span>KCMO City Clerk — LLC Rental Affidavits (6hy4-5b3m) — Registered LLC rental property owners by ZIP</span></div>
       </div>
     </div>
 
@@ -628,8 +628,8 @@
 
     function renderPropertySection() {
       const v = d.violations;
-      const p = d.permits;
-      if (!v && !p) {
+      const llc = d.rentalLLCs;
+      if (!v && !llc) {
         return `
           <div class="section-card">
             <div class="section-head">
@@ -647,13 +647,14 @@
           <div class="activity-cat-row"><span>Closed violations</span><span class="activity-count">${esc(String(v.closedViolations))}</span></div>
           ${(v.topViolationTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
         </div>` : '';
-      const permitsBlock = p ? `
+      const llcBlock = llc ? `
         <div class="activity-block">
-          <div class="activity-block-label">Building Permits (KCMO Open Data)</div>
-          <div class="activity-cat-row"><span>Total permits</span><span class="activity-count">${esc(String(p.totalPermits))}</span></div>
-          <div class="activity-cat-row"><span>Permits last 12 months</span><span class="activity-count">${esc(String(p.recentPermits))}</span></div>
-          <div class="activity-cat-row"><span>Total declared value</span><span class="activity-count">$${esc(Number(p.totalDeclaredValue).toLocaleString())}</span></div>
-          ${(p.topPermitTypes || []).map(t => `<div class="activity-cat-row"><span>${esc(t.type)}</span><span class="activity-count">${t.count}</span></div>`).join('')}
+          <div class="activity-block-label">Rental LLC Owners — ${esc(String(llc.totalOwners))} registered (KCMO City Clerk)</div>
+          ${(llc.owners || []).slice(0, 8).map(o => `
+            <div class="activity-cat-row">
+              <span>${esc(o.llcName)}${o.dba ? ` <span style="color:var(--muted);font-size:11px;">dba ${esc(o.dba)}</span>` : ''}</span>
+              <span class="activity-count" style="font-size:11px">${esc(o.agent || '')}</span>
+            </div>`).join('')}
         </div>` : '';
       return `
         <div class="section-card">
@@ -661,7 +662,7 @@
             <div class="section-icon">◰</div>
             <div class="section-title">Property &amp; Ownership</div>
           </div>
-          <div class="section-body activity-body">${violationsBlock}${permitsBlock}</div>
+          <div class="section-body activity-body">${violationsBlock}${llcBlock}</div>
         </div>`;
     }
 

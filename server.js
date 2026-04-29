@@ -2,7 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cron = require('node-cron');
-const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchBuildingPermits } = require('./collectors');
+const { makeCollectors, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchRentalLLCOwners } = require('./collectors');
 const { gatherBusinessIntel, extractMenuFromImage, scrapeKCReviewSources, searchAndScrapeWeb, scrapeInstagram } = require('./businessIntel');
 const { computeAndStore } = require('./opportunityScore');
 const { DATA_SOURCES, getHolcData } = require('./dataSources');
@@ -873,7 +873,7 @@ app.post('/api/civiciq/report', async (req, res) => {
     const ejStateFips = zip
       ? ((parseInt(zip.substring(0, 2)) >= 66 && parseInt(zip.substring(0, 2)) <= 67) ? '20' : '29')
       : null;
-    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData, violationsData, permitsData] = await Promise.all([
+    const [censusData, hmdaData, ejscreenData, communityRows, businessData, data311, sentimentData, violationsData, rentalLLCData] = await Promise.all([
       zip ? fetchCensusData(zip).catch(() => null) : Promise.resolve(null),
       fetchHmdaData().catch(() => null),
       (resolvedLat && resolvedLng) ? fetchEJScreen(resolvedLat, resolvedLng, zip, ejStateFips).catch(() => null) : Promise.resolve(null),
@@ -889,7 +889,7 @@ app.post('/api/civiciq/report', async (req, res) => {
       fetch311Data(pool, neighborhood).catch(() => ({ totalRequests: 0, topCategories: [], abandonedProperty: 0, streetIssues: 0, codeViolations: 0 })),
       fetchNeighborhoodSentiment(neighborhood).catch(() => ({ posts: [], overallSentiment: 'neutral', signalCount: 0 })),
       zip ? fetchPropertyViolations(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
-      zip ? fetchBuildingPermits(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
+      zip ? fetchRentalLLCOwners(pool, neighborhood, zip).catch(() => null) : Promise.resolve(null),
     ]);
 
     const holcData = getHolcData(neighborhood);
@@ -986,8 +986,8 @@ ${sentimentContext}
 PROPERTY VIOLATIONS:
 ${violationsData ? JSON.stringify(violationsData) : 'Property violations data not available'}
 
-BUILDING PERMITS:
-${permitsData ? JSON.stringify(permitsData) : 'Building permits data not available'}
+RENTAL LLC OWNERS:
+${rentalLLCData ? JSON.stringify(rentalLLCData) : 'Rental LLC ownership data not available'}
 
 ---
 
@@ -1044,7 +1044,7 @@ SECTION GUIDANCE:
         data_311:           data311,
         sentiment:          sentimentData,
         violations:         violationsData,
-        permits:            permitsData,
+        rentalLLCs:         rentalLLCData,
         community_mentions: communityMentions.length,
         coords: (resolvedLat && resolvedLng) ? { lat: resolvedLat, lng: resolvedLng } : null,
       },

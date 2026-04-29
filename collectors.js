@@ -1016,38 +1016,51 @@ function makeCollectors(pool) {
   return { collectReddit, collectGdelt, collectKcOpenData, collectCensus, collectFoursquare };
 }
 
-// ── fetchPropertyViolations — KCMO Property Violations (fmCK-dg4k) ────────────
+// ── fetchPropertyViolations — KCMO Property Violations (vq3e-m9ge primary, tveh-zsv3 fallback)
 async function fetchPropertyViolations(pool, neighborhoodName, zip) {
   try {
     const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
+    // Both datasets use address/lat-lng not ZIP; pull 500 most recent and log fields
+    // for filter discovery. vq3e-m9ge = EnerGov current; tveh-zsv3 = 311-based open violations.
+    const DATASETS = [
+      { id: 'vq3e-m9ge', order: 'open_date_time' },
+      { id: 'tveh-zsv3', order: 'open_date_time' },
+    ];
 
-    // KCMO Property Violations dataset: fmCK-dg4k
-    const url = `https://data.kcmo.org/resource/fmCK-dg4k.json?$where=zip_code='${zip}'&$limit=500&$order=violation_date+DESC`;
-    console.log(`[violations] querying ZIP ${zip} for ${neighborhoodName}`);
-
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      console.error(`[violations] status=${res.status}`);
-      return null;
+    let data = null;
+    for (const ds of DATASETS) {
+      const url = `https://data.kcmo.org/resource/${ds.id}.json?$limit=500&$order=${ds.order}+DESC`;
+      console.log(`[violations] trying dataset ${ds.id} for ${neighborhoodName}`);
+      try {
+        const res = await fetch(url, { headers });
+        console.log(`[violations] status=${res.status} dataset=${ds.id}`);
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.warn(`[violations] ${ds.id} error: ${errBody.substring(0, 200)}`);
+          continue;
+        }
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          console.log(`[violations] ${rows.length} records from ${ds.id}`);
+          if (rows[0]) console.log(`[violations] field names: ${Object.keys(rows[0]).join(', ')}`);
+          data = rows;
+          break;
+        }
+        console.log(`[violations] ${ds.id} returned 0 records, trying fallback`);
+      } catch (e) {
+        console.warn(`[violations] ${ds.id} failed: ${e.message}`);
+      }
     }
 
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) {
-      console.log(`[violations] no records for ZIP ${zip}`);
-      return null;
-    }
-
-    console.log(`[violations] ${data.length} records for ZIP ${zip}`);
-    if (data[0]) console.log('[violations] field names:', Object.keys(data[0]).join(', '));
+    if (!data) { console.log(`[violations] no data from any dataset for ${neighborhoodName}`); return null; }
 
     const typeCounts = {};
-    let openCount = 0;
-    let closedCount = 0;
-
+    let openCount = 0, closedCount = 0;
     for (const v of data) {
-      const type = v.violation_description || v.violation_type || v.category || 'Unknown';
+      const type = v.violation_description || v.violation_type || v.code_section || v.category || 'Unknown';
       typeCounts[type] = (typeCounts[type] || 0) + 1;
-      if (v.status && v.status.toLowerCase().includes('open')) openCount++;
+      const status = (v.status || v.violation_status || '').toLowerCase();
+      if (status.includes('open') || status === 'active') openCount++;
       else closedCount++;
     }
 
@@ -1070,60 +1083,45 @@ async function fetchPropertyViolations(pool, neighborhoodName, zip) {
   }
 }
 
-// ── fetchBuildingPermits — KCMO Building Permits (ha5f-h3t6) ─────────────────
-async function fetchBuildingPermits(pool, neighborhoodName, zip) {
+// ── fetchRentalLLCOwners — KCMO LLC Rental Affidavits (6hy4-5b3m) ──────────────
+async function fetchRentalLLCOwners(pool, neighborhoodName, zip) {
   try {
     const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
-
-    // KCMO Building Permits dataset: ha5f-h3t6
-    const url = `https://data.kcmo.org/resource/ha5f-h3t6.json?$where=zip_code='${zip}'&$limit=500&$order=issued_date+DESC`;
-    console.log(`[permits] querying ZIP ${zip} for ${neighborhoodName}`);
-
+    const url = `https://data.kcmo.org/resource/6hy4-5b3m.json?$where=zipcode='${zip}'&$limit=500`;
+    console.log(`[llc-owners] querying ZIP ${zip} for ${neighborhoodName}`);
     const res = await fetch(url, { headers });
+    console.log(`[llc-owners] status=${res.status}`);
     if (!res.ok) {
-      console.error(`[permits] status=${res.status}`);
+      const errBody = await res.text();
+      console.warn(`[llc-owners] error: ${errBody.substring(0, 200)}`);
       return null;
     }
-
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) {
-      console.log(`[permits] no records for ZIP ${zip}`);
+      console.log(`[llc-owners] no records for ZIP ${zip}`);
       return null;
     }
+    console.log(`[llc-owners] ${data.length} records for ZIP ${zip}`);
+    if (data[0]) console.log(`[llc-owners] field names: ${Object.keys(data[0]).join(', ')}`);
 
-    console.log(`[permits] ${data.length} records for ZIP ${zip}`);
-    if (data[0]) console.log('[permits] field names:', Object.keys(data[0]).join(', '));
-
-    const typeCounts = {};
-    let totalValue = 0;
-    let recentCount = 0;
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-    for (const p of data) {
-      const type = p.permit_type || p.work_description || p.category || 'Unknown';
-      typeCounts[type] = (typeCounts[type] || 0) + 1;
-      totalValue += parseFloat(p.declared_valuation || p.value || 0);
-      if (p.issued_date && new Date(p.issued_date) > oneYearAgo) recentCount++;
-    }
-
-    const topTypes = Object.entries(typeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([type, count]) => ({ type, count }));
+    const owners = data.map(r => ({
+      llcName: r.llc_name || null,
+      dba:     r.does_business_as || null,
+      address: r.address || null,
+      agent:   r.applicant_name || null,
+    })).filter(o => o.llcName);
 
     return {
       neighborhood: neighborhoodName,
-      totalPermits: data.length,
-      recentPermits: recentCount,
-      totalDeclaredValue: Math.round(totalValue),
-      topPermitTypes: topTypes,
-      dataSource: 'KCMO Open Data — Building Permits',
+      zip,
+      totalOwners: owners.length,
+      owners: owners.slice(0, 20),
+      dataSource: 'KCMO Open Data — LLC Rental Affidavits',
     };
   } catch(e) {
-    console.error('[permits] failed:', e.message);
+    console.error('[llc-owners] failed:', e.message);
     return null;
   }
 }
 
-module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchBuildingPermits };
+module.exports = { makeCollectors, KC_NEIGHBORHOODS, fetchCensusData, fetchHmdaData, fetchEJScreen, fetchKCNeighborhoodPop, fetchNeighborhoodBusinesses, fetch311Data, fetchNeighborhoodSentiment, fetchPropertyViolations, fetchRentalLLCOwners };
