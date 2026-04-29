@@ -1022,33 +1022,31 @@ async function fetchPropertyViolations(pool, neighborhoodName, zip) {
     const headers = { 'X-App-Token': process.env.KCMO_APP_TOKEN || '' };
     // Both datasets use address/lat-lng not ZIP; pull 500 most recent and log fields
     // for filter discovery. vq3e-m9ge = EnerGov current; tveh-zsv3 = 311-based open violations.
-    const DATASETS = [
-      { id: 'vq3e-m9ge', order: 'open_date_time' },
-      { id: 'tveh-zsv3', order: 'open_date_time' },
-    ];
+    // No $order clause — vq3e-m9ge uses column names like case_status/casenumber, not open_date_time
+    const DATASETS = ['vq3e-m9ge', 'tveh-zsv3'];
 
     let data = null;
-    for (const ds of DATASETS) {
-      const url = `https://data.kcmo.org/resource/${ds.id}.json?$limit=500&$order=${ds.order}+DESC`;
-      console.log(`[violations] trying dataset ${ds.id} for ${neighborhoodName}`);
+    for (const dsId of DATASETS) {
+      const url = `https://data.kcmo.org/resource/${dsId}.json?$limit=500`;
+      console.log(`[violations] trying dataset ${dsId} for ${neighborhoodName}`);
       try {
         const res = await fetch(url, { headers });
-        console.log(`[violations] status=${res.status} dataset=${ds.id}`);
+        console.log(`[violations] status=${res.status} dataset=${dsId}`);
         if (!res.ok) {
           const errBody = await res.text();
-          console.warn(`[violations] ${ds.id} error: ${errBody.substring(0, 200)}`);
+          console.warn(`[violations] ${dsId} error: ${errBody.substring(0, 200)}`);
           continue;
         }
         const rows = await res.json();
         if (Array.isArray(rows) && rows.length > 0) {
-          console.log(`[violations] ${rows.length} records from ${ds.id}`);
+          console.log(`[violations] ${rows.length} records from ${dsId}`);
           if (rows[0]) console.log(`[violations] field names: ${Object.keys(rows[0]).join(', ')}`);
           data = rows;
           break;
         }
-        console.log(`[violations] ${ds.id} returned 0 records, trying fallback`);
+        console.log(`[violations] ${dsId} returned 0 records, trying fallback`);
       } catch (e) {
-        console.warn(`[violations] ${ds.id} failed: ${e.message}`);
+        console.warn(`[violations] ${dsId} failed: ${e.message}`);
       }
     }
 
@@ -1059,7 +1057,8 @@ async function fetchPropertyViolations(pool, neighborhoodName, zip) {
     for (const v of data) {
       const type = v.violation_description || v.violation_type || v.code_section || v.category || 'Unknown';
       typeCounts[type] = (typeCounts[type] || 0) + 1;
-      const status = (v.status || v.violation_status || '').toLowerCase();
+      // case_status is the confirmed column name in vq3e-m9ge
+      const status = (v.case_status || v.status || v.violation_status || '').toLowerCase();
       if (status.includes('open') || status === 'active') openCount++;
       else closedCount++;
     }
@@ -1104,19 +1103,12 @@ async function fetchRentalLLCOwners(pool, neighborhoodName, zip) {
     console.log(`[llc-owners] ${data.length} records for ZIP ${zip}`);
     if (data[0]) console.log(`[llc-owners] field names: ${Object.keys(data[0]).join(', ')}`);
 
-    const owners = data.map(r => ({
-      llcName: r.llc_name || null,
-      dba:     r.does_business_as || null,
-      address: r.address || null,
-      agent:   r.applicant_name || null,
-    })).filter(o => o.llcName);
-
     return {
       neighborhood: neighborhoodName,
-      zip,
-      totalOwners: owners.length,
-      owners: owners.slice(0, 20),
-      dataSource: 'KCMO Open Data — LLC Rental Affidavits',
+      totalLLCs: data.length,
+      topOwners: data.slice(0, 10).map(r => ({ name: r.llc_name, agent: r.applicant_name, state: r.state })),
+      outOfStateCount: data.filter(r => r.state && r.state !== 'MO' && r.state !== 'KS').length,
+      dataSource: 'KCMO Open Data — Rental Property LLC Owners',
     };
   } catch(e) {
     console.error('[llc-owners] failed:', e.message);
