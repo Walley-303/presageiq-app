@@ -585,8 +585,10 @@
     const ts = new Date(report.generated_at).toLocaleString('en-US', {
       dateStyle: 'medium', timeStyle: 'short'
     });
-    document.getElementById('rpt-meta').textContent =
-      (report.zip ? `ZIP ${report.zip} · ` : '') + `Generated ${ts}`;
+    const zipLabel = report.zip
+      ? `ZIP ${report.zip}${report.zip_auto_resolved ? ' (auto-resolved)' : ''} · `
+      : '';
+    document.getElementById('rpt-meta').textContent = zipLabel + `Generated ${ts}`;
 
     // ── Data facts ──
     const facts = [];

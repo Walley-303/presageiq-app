@@ -815,17 +815,49 @@ app.get('/civiciq', (req, res) => res.sendFile(path.join(__dirname, 'public', 'c
 
 // ── CivicIQ fallback lookup tables ────────────────────────────────────────────
 const CIVICIQ_ZIP_FALLBACKS = {
-  'Troost Corridor': '64110',
-  'East Side':       '64130',
-  'Westside':        '64108',
-  '18th and Vine':   '64108',
-  'Crossroads':      '64108',
-  'River Market':    '64106',
-  'Brookside':       '64113',
-  'Waldo':           '64114',
-  'Midtown':         '64111',
-  'Downtown KC':     '64105',
-  'North KC':        '64116',
+  'Troost Corridor':      '64110',
+  'East Side':            '64130',
+  'Westside':             '64108',
+  '18th and Vine':        '64108',
+  'Crossroads':           '64108',
+  'Crossroads Arts District': '64108',
+  'Downtown KC':          '64105',
+  'River Market':         '64106',
+  'North KC':             '64116',
+  'Midtown':              '64111',
+  'Hyde Park':            '64109',
+  'Brookside':            '64113',
+  'Waldo':                '64114',
+  'Martin City':          '64114',
+  'Westport':             '64111',
+  'Plaza':                '64112',
+  'Country Club Plaza':   '64112',
+  'Overland Park':        '66210',
+  'KCK':                  '66101',
+  'Argentine':            '66104',
+  'Rosedale':             '66103',
+  'Wyandotte County':     '66101',
+  'East Bottoms':         '64120',
+  'Independence':         '64050',
+  'Raytown':              '64133',
+  'Grandview':            '64030',
+  'Liberty':              '64068',
+  "Lee's Summit":         '64063',
+  'Swope Park':           '64132',
+  'Ruskin Heights':       '64134',
+  'Blue Hills':           '64128',
+  'Eastwood Hills':       '64129',
+  'Beacon Hill':          '64108',
+  'Quality Hill':         '64105',
+  'Crown Center':         '64108',
+  'Hospital Hill':        '64108',
+  'Volker':               '64110',
+  'Roanoke':              '64112',
+  'Pendleton Heights':    '64120',
+  'Northeast':            '64116',
+  'Northland':            '64155',
+  'Claycomo':             '64116',
+  'Briarcliff':           '64116',
 };
 
 const CIVICIQ_COORD_FALLBACKS = {
@@ -846,7 +878,13 @@ app.post('/api/civiciq/report', async (req, res) => {
 
   try {
     // ── Resolve ZIP — param → fallback map ────────────────────────────────────
-    const zip = zipParam || CIVICIQ_ZIP_FALLBACKS[neighborhood] || null;
+    let zip = (zipParam && zipParam.trim()) ? zipParam.trim() : null;
+    let zipAutoResolved = false;
+    if (!zip) {
+      zip = CIVICIQ_ZIP_FALLBACKS[neighborhood] || null;
+      if (zip) { zipAutoResolved = true; console.log(`[civiciq] auto-resolved ZIP ${zip} for ${neighborhood}`); }
+      else console.log(`[civiciq] no ZIP fallback found for ${neighborhood}`);
+    }
 
     // ── Resolve coordinates — param → DB fuzzy → hardcoded fallback ──────────
     let resolvedLat = latParam ? parseFloat(latParam) : null;
@@ -1036,6 +1074,7 @@ SECTION GUIDANCE:
     res.json({
       neighborhood,
       zip: zip || null,
+      zip_auto_resolved: zipAutoResolved,
       generated_at: new Date().toISOString(),
       data: {
         census:    censusData,
